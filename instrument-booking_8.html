@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instrument Booking</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F5F7F8; --surface:#FFFFFF; --surface-2:#EBEFF1;
+  --border:#DAE1E5; --border-strong:#B9C3C9;
+  --text:#1A2127; --text-muted:#5C6770; --text-faint:#8B959D;
+  --accent:#0F7A72; --accent-strong:#0B5C56; --accent-soft:#E1F1EF;
+  --danger:#B3432F; --danger-soft:#F7E4DF;
+  --cz384:#C57A2E; --cz384-soft:#F7ECDC;
+  --br384:#3866C9; --br384-soft:#E3EBFB;
+  --br96:#7D56B8; --br96-soft:#EEE7F8;
+  --liquid:#BD4C86; --liquid-soft:#F8E7EF;
+  --shadow: 0 12px 28px rgba(20,30,35,.14);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10161A; --surface:#161D22; --surface-2:#1C242A;
+    --border:#2B363D; --border-strong:#3C4A53;
+    --text:#E7EDF0; --text-muted:#A7B3BA; --text-faint:#6E7B83;
+    --accent:#3DBAAD; --accent-strong:#59CCBF; --accent-soft:#163330;
+    --danger:#E2795F; --danger-soft:#33201A;
+    --cz384:#E3A24F; --cz384-soft:#332512;
+    --br384:#7C9EEB; --br384-soft:#1B2740;
+    --br96:#B393E0; --br96-soft:#271D38;
+    --liquid:#E08AB6; --liquid-soft:#301E28;
+    --shadow: 0 12px 28px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10161A; --surface:#161D22; --surface-2:#1C242A;
+  --border:#2B363D; --border-strong:#3C4A53;
+  --text:#E7EDF0; --text-muted:#A7B3BA; --text-faint:#6E7B83;
+  --accent:#3DBAAD; --accent-strong:#59CCBF; --accent-soft:#163330;
+  --danger:#E2795F; --danger-soft:#33201A;
+  --cz384:#E3A24F; --cz384-soft:#332512;
+  --br384:#7C9EEB; --br384-soft:#1B2740;
+  --br96:#B393E0; --br96-soft:#271D38;
+  --liquid:#E08AB6; --liquid-soft:#301E28;
+  --shadow: 0 12px 28px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box;}
+body{background:var(--bg);}
+.page{
+  max-width:1500px; margin:0 auto; padding:28px 20px 48px;
+  font-family:"IBM Plex Sans", system-ui, sans-serif; color:var(--text);
+}
+h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; letter-spacing:-0.01em; margin:0; text-wrap:balance;}
+.subtitle{margin:2px 0 0; font-size:13.5px; color:var(--text-muted);}
+.topbar{display:flex; flex-direction:column; gap:16px; margin-bottom:20px;}
+.topbar-main{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+.status-pill{
+  display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+  padding:5px 10px 5px 8px; border-radius:999px; border:1px solid var(--border); background:var(--surface);
+  color:var(--text-muted); white-space:nowrap;
+}
+.status-pill .dot{width:7px; height:7px; border-radius:50%; background:var(--text-faint);}
+.status-pill.live{color:var(--accent-strong); border-color:var(--accent); background:var(--accent-soft);}
+.status-pill.live .dot{background:var(--accent);}
+.status-pill.down{color:var(--danger); border-color:var(--danger); background:var(--danger-soft);}
+.status-pill.down .dot{background:var(--danger);}
+.topbar-controls{display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;}
+.date-nav{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.btn{
+  font-family:inherit; font-size:13.5px; font-weight:600; cursor:pointer; border-radius:8px;
+  padding:8px 12px; border:1px solid var(--border); background:var(--surface); color:var(--text);
+  transition:background .12s, border-color .12s;
+}
+.btn:hover{border-color:var(--border-strong);}
+.btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+.btn-ghost{padding:8px 10px; font-size:16px; line-height:1;}
+.btn-outline{color:var(--accent-strong); border-color:var(--accent);}
+.btn-outline:hover{background:var(--accent-soft);}
+.btn-primary{background:var(--accent); border-color:var(--accent); color:#fff; width:100%; padding:11px 12px; font-size:14px;}
+.btn-primary:hover{background:var(--accent-strong);}
+.btn-primary:disabled{opacity:.45; cursor:not-allowed;}
+.btn-danger{background:transparent; border-color:var(--danger); color:var(--danger);}
+.btn-danger:hover{background:var(--danger-soft);}
+.date-display{
+  display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:6px 10px;
+}
+.date-weekday{font-size:13.5px; font-weight:600; white-space:nowrap;}
+.date-input{
+  font-family:"IBM Plex Mono", monospace; font-size:12.5px; color:var(--text-muted);
+  border:none; background:transparent; padding:0;
+}
+.date-input:focus-visible{outline:2px solid var(--accent); border-radius:4px;}
+.legend{display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--text-muted);}
+.legend-item{display:inline-flex; align-items:center; gap:6px;}
+.legend-dot{width:9px; height:9px; border-radius:3px; display:inline-block;}
+
+.layout{display:grid; grid-template-columns:264px minmax(0,1fr); gap:18px; align-items:start; min-width:0;}
+.layout > *{min-width:0;}
+@media (max-width:860px){ .layout{grid-template-columns:minmax(0,1fr);} }
+
+.panel{
+  background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px;
+  display:flex; flex-direction:column; gap:13px; position:sticky; top:16px;
+}
+.panel h2{font-family:"Archivo",sans-serif; font-size:15px; font-weight:700; margin:0;}
+.panel-date{
+  display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12.5px;
+  background:var(--surface-2); border-radius:8px; padding:7px 10px; color:var(--text-muted);
+}
+.panel-date strong{color:var(--text); font-weight:600;}
+.panel-date button{background:none; border:none; color:var(--accent-strong); font-size:11.5px; font-weight:600; cursor:pointer; padding:2px;}
+.field{display:flex; flex-direction:column; gap:6px;}
+.field-head{display:flex; align-items:baseline; justify-content:space-between; gap:8px;}
+.field-head label{font-size:11.5px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.02em;}
+.field-actions{display:flex; gap:10px;}
+.field-actions button{background:none; border:none; padding:0; font-size:11px; font-weight:600; color:var(--accent-strong); cursor:pointer;}
+.field-actions button:hover{text-decoration:underline;}
+.field input{
+  font-family:inherit; font-size:13.5px; padding:8px 9px; border:1px solid var(--border); border-radius:7px;
+  background:var(--surface); color:var(--text); width:100%;
+}
+.field input:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+.chip-group{display:flex; flex-wrap:wrap; gap:5px;}
+.chip{
+  font-family:"IBM Plex Mono", monospace; font-size:10.5px; font-weight:500; padding:5px 7px; border-radius:6px;
+  border:1px solid; line-height:1.25; cursor:pointer; background:none; transition:box-shadow .1s;
+}
+.chip.time{background:var(--surface-2); border-color:var(--border); color:var(--text); font-size:11px;}
+.chip.time.selected{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong); font-weight:700;}
+.chip.time.inactive{opacity:.4; cursor:default;}
+.chip.cz384{background:var(--cz384-soft); border-color:var(--cz384); color:var(--text);}
+.chip.br384{background:var(--br384-soft); border-color:var(--br384); color:var(--text);}
+.chip.br96{background:var(--br96-soft); border-color:var(--br96); color:var(--text);}
+.chip.liquid{background:var(--liquid-soft); border-color:var(--liquid); color:var(--text);}
+.chip.taken{background:var(--surface-2); border-color:var(--border); color:var(--text-faint); text-decoration:line-through; cursor:not-allowed;}
+.chip.selected{box-shadow:0 0 0 2px var(--text) inset;}
+.chip:disabled{cursor:not-allowed;}
+.chip:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+.panel-hint{font-size:11px; color:var(--text-faint); margin:0;}
+.selection-summary{font-size:12px; color:var(--text-muted); background:var(--surface-2); border-radius:8px; padding:9px 10px; line-height:1.5;}
+.selection-summary strong{color:var(--text);}
+.panel-error{font-size:12px; color:var(--danger); background:var(--danger-soft); border-radius:7px; padding:7px 9px; display:none;}
+.panel-error.show{display:block;}
+
+.scheduler-card{border:1px solid var(--border); border-radius:12px; background:var(--surface); overflow:hidden;}
+.scheduler-scroll{overflow:auto; max-height:min(74vh, 780px);}
+.scheduler{
+  position:relative; display:grid;
+  grid-template-columns:62px repeat(12, minmax(70px, 1fr));
+  grid-template-rows:32px 46px repeat(14, 46px);
+  min-width:902px;
+}
+.cell-corner{grid-column:1; grid-row:1 / 3; position:sticky; top:0; left:0; z-index:6; background:var(--surface); border-right:1px solid var(--border); border-bottom:1px solid var(--border);}
+.cell-cat{
+  grid-row:1; position:sticky; top:0; z-index:5; display:flex; align-items:center; padding:0 10px;
+  font-size:11px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:#fff;
+  border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.cell-res{
+  grid-row:2; position:sticky; top:32px; z-index:5; background:var(--surface); border-right:1px solid var(--border);
+  border-bottom:1px solid var(--border-strong); padding:5px 8px; display:flex; flex-direction:column; justify-content:center; gap:1px; overflow:hidden;
+}
+.cell-res .code{font-family:"IBM Plex Mono", monospace; font-size:11.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.cell-res .meta{font-size:9.5px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.cell-ruler{
+  grid-column:1; position:sticky; left:0; z-index:4; background:var(--surface); border-right:1px solid var(--border);
+  border-top:1px solid var(--border-strong); padding:5px 0 0 7px; display:flex; flex-direction:column;
+  font-family:"IBM Plex Mono", monospace;
+}
+.cell-ruler .rl-start{font-size:11.5px; font-weight:600;}
+.cell-ruler .rl-end{font-size:10px; color:var(--text-faint);}
+.cell-ruler.current{background:var(--accent-soft);}
+.slot{
+  appearance:none; border:none; border-top:1px solid var(--border-strong); border-right:1px solid var(--border);
+  background:var(--surface); cursor:pointer; padding:0; margin:0; z-index:1; position:relative;
+}
+.slot:hover{background:var(--accent-soft);}
+.slot:focus-visible{outline:2px solid var(--accent); outline-offset:-2px; z-index:2;}
+.slot.current{background:var(--surface-2);}
+.slot.current:hover{background:var(--accent-soft);}
+.slot.picked{background:var(--accent-soft); box-shadow:inset 0 0 0 2px var(--accent);}
+.booking{
+  appearance:none; z-index:2; position:relative; margin:2px; border-radius:7px; border:1px solid transparent;
+  padding:6px 8px; text-align:left; cursor:pointer; font-family:inherit; display:flex; flex-direction:column;
+  justify-content:center; gap:2px; overflow:hidden; width:calc(100% - 4px); height:calc(100% - 4px);
+}
+.booking:focus-visible{outline:2px solid var(--text); outline-offset:1px;}
+.booking .name{font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.2;}
+.booking .time{font-size:10px; font-weight:500; opacity:.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.15; font-family:"IBM Plex Mono", monospace; font-variant-numeric:tabular-nums;}
+.cat-cz384{background:var(--cz384);}
+.cat-br384{background:var(--br384);}
+.cat-br96{background:var(--br96);}
+.cat-liquid{background:var(--liquid);}
+.booking.cz384{background:var(--cz384-soft); border-color:var(--cz384); color:var(--text);}
+.booking.br384{background:var(--br384-soft); border-color:var(--br384); color:var(--text);}
+.booking.br96{background:var(--br96-soft); border-color:var(--br96); color:var(--text);}
+.booking.liquid{background:var(--liquid-soft); border-color:var(--liquid); color:var(--text);}
+
+.hint{font-size:12px; color:var(--text-faint); margin:12px 2px 0;}
+
+.week-card{margin-top:22px; border:1px solid var(--border); border-radius:12px; background:var(--surface); padding:18px 18px 14px;}
+.week-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px;}
+.week-head h2{font-family:"Archivo",sans-serif; font-size:15px; font-weight:700; margin:0;}
+.week-range{font-size:12.5px; color:var(--text-muted); font-family:"IBM Plex Mono", monospace;}
+.week-scroll{overflow-x:auto;}
+.week-table{border-collapse:collapse; width:100%; min-width:760px;}
+.week-corner{width:150px;}
+.week-th{font-size:11px; font-weight:700; text-align:center; padding:4px 4px 8px; color:var(--text-muted); border-bottom:2px solid var(--border-strong); cursor:pointer;}
+.week-th:hover{color:var(--accent-strong);}
+.week-th .wd{display:block; text-transform:uppercase; letter-spacing:.03em; font-size:10px;}
+.week-th .dd{display:block; font-size:13px; font-weight:700; color:var(--text); font-family:"IBM Plex Mono", monospace; margin-top:1px;}
+.week-th.today{color:var(--accent-strong);}
+.week-th.today .dd{color:var(--accent-strong);}
+.week-th.selected{border-bottom-color:var(--accent);}
+.week-res-label{
+  position:sticky; left:0; background:var(--surface); font-family:"IBM Plex Mono", monospace; font-size:11px;
+  font-weight:600; padding:6px 10px 6px 2px; white-space:nowrap; border-bottom:1px solid var(--border); text-align:left;
+}
+.cat-dot{display:inline-block; width:7px; height:7px; border-radius:2px; margin-right:7px; vertical-align:middle;}
+.cat-dot.cz384{background:var(--cz384);}
+.cat-dot.br384{background:var(--br384);}
+.cat-dot.liquid{background:var(--liquid);}
+.week-cell{padding:6px 8px; border-bottom:1px solid var(--border); cursor:pointer; border-radius:5px;}
+.week-cell:hover{background:var(--accent-soft);}
+.week-cell.today-col{background:var(--surface-2);}
+.week-cell.today-col:hover{background:var(--accent-soft);}
+.occ-bar{display:flex; gap:1px; height:16px; align-items:stretch; min-width:90px;}
+.occ-seg{flex:1; border-radius:1px; background:var(--surface-2); border:1px solid var(--border);}
+.occ-seg.booked{border-color:transparent;}
+.occ-seg.booked.cz384{background:var(--cz384);}
+.occ-seg.booked.br384{background:var(--br384);}
+.occ-seg.booked.liquid{background:var(--liquid);}
+
+.drawer-overlay{position:fixed; inset:0; background:rgba(10,14,17,.4); opacity:0; pointer-events:none; transition:opacity .15s; z-index:50;}
+.drawer-overlay.open{opacity:1; pointer-events:auto;}
+.drawer{
+  position:fixed; top:0; right:0; height:100%; width:min(360px,100%); background:var(--surface);
+  box-shadow:var(--shadow); transform:translateX(100%); transition:transform .2s ease; z-index:51;
+  display:flex; flex-direction:column; border-left:1px solid var(--border);
+}
+.drawer.open{transform:translateX(0);}
+.drawer-head{display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:18px 18px 12px; border-bottom:1px solid var(--border);}
+.drawer-head h2{font-family:"Archivo",sans-serif; font-size:16px; font-weight:700; margin:0;}
+.drawer-head .drawer-sub{font-size:12px; color:var(--text-muted); margin-top:3px;}
+.drawer-close{background:none; border:none; font-size:20px; line-height:1; color:var(--text-muted); cursor:pointer; padding:4px;}
+.drawer-body{padding:16px 18px; overflow-y:auto; flex:1;}
+.detail-row{display:flex; justify-content:space-between; font-size:13px; padding:7px 0; border-bottom:1px solid var(--border);}
+.detail-row .k{color:var(--text-muted);}
+.detail-row .v{font-weight:600; text-align:right;}
+.drawer-foot{padding:14px 18px; border-top:1px solid var(--border); display:flex; gap:10px; justify-content:flex-end;}
+
+.toast{
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--bg);
+  font-size:13px; font-weight:500; padding:10px 16px; border-radius:8px; box-shadow:var(--shadow); z-index:60;
+  opacity:0; transition:opacity .15s, transform .15s; max-width:90vw; text-align:center;
+}
+:root[data-theme="dark"] .toast, :root:not([data-theme="light"]) .toast{color:var(--text); background:var(--surface-2); border:1px solid var(--border-strong);}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
+
+@media (prefers-reduced-motion: reduce){
+  .drawer, .drawer-overlay, .toast{transition:none;}
+}
+@media (max-width:640px){
+  .topbar-controls{flex-direction:column; align-items:stretch;}
+  .legend{order:2;}
+  .panel{position:static;}
+}
+</style>
+</head>
+<body>
+
+<div class="page">
+  <header class="topbar">
+    <div class="topbar-main">
+      <div class="title-block">
+        <h1>Instrument Booking</h1>
+        <p class="subtitle">CZ &amp; BR lab thermocyclers &middot; Firefly &middot; Mantis &mdash; shared with the whole lab</p>
+      </div>
+      <div class="status-pill" id="statusPill" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Connecting…</span></div>
+    </div>
+    <div class="topbar-controls">
+      <div class="date-nav">
+        <button class="btn btn-ghost" id="prevDay" aria-label="Previous day">‹</button>
+        <div class="date-display">
+          <span class="date-weekday" id="dateWeekday">—</span>
+          <input type="date" id="dateInput" class="date-input" aria-label="Jump to date">
+        </div>
+        <button class="btn btn-ghost" id="nextDay" aria-label="Next day">›</button>
+        <button class="btn btn-outline" id="todayBtn">Today</button>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="panel" id="quickBook">
+      <h2>Quick book</h2>
+      <div class="panel-date">
+        <span>Booking for <strong id="panelDate">—</strong></span>
+        <button type="button" id="panelChangeDate">Change</button>
+      </div>
+
+      <div class="field">
+        <div class="field-head">
+          <label>Time</label>
+          <span class="field-actions">
+            <button type="button" id="slotAll">Whole day</button>
+            <button type="button" id="slotClear">Clear</button>
+          </span>
+        </div>
+        <div class="chip-group" id="slotChips"></div>
+      </div>
+
+      <div class="field">
+        <div class="field-head">
+          <label>Instrument</label>
+          <span class="field-actions">
+            <button type="button" id="resAll">Select all free</button>
+            <button type="button" id="resClear">Clear</button>
+          </span>
+        </div>
+        <div class="chip-group" id="resChips"></div>
+        <p class="panel-hint" id="resHint">Pick a time above to see what's free.</p>
+      </div>
+
+      <div class="selection-summary" id="selectionSummary">Pick a time and at least one instrument.</div>
+
+      <div class="field">
+        <label for="qbName">Booked by</label>
+        <input type="text" id="qbName" maxlength="60" placeholder="Your name" autocomplete="off">
+      </div>
+      <div class="panel-error" id="panelError"></div>
+      <button class="btn btn-primary" id="qbSubmit" disabled>Select time &amp; instrument</button>
+      <p class="panel-note" style="font-size:11.5px;color:var(--text-faint);line-height:1.4;margin:0;">Select several time blocks and several instruments to book them all at once &mdash; only combinations that are still free get booked.</p>
+    </div>
+
+    <div>
+      <div class="scheduler-card">
+        <div class="scheduler-scroll" id="schedulerScroll">
+          <div class="scheduler" id="scheduler"></div>
+        </div>
+      </div>
+      <p class="hint">Click open cells in the grid to add them to Quick Book, or use the chips on the left. Click an existing booking to view or cancel it.</p>
+    </div>
+  </div>
+
+  <div class="week-card">
+    <div class="week-head">
+      <h2>This week</h2>
+      <span class="week-range" id="weekRange">—</span>
+    </div>
+    <div class="week-scroll">
+      <table class="week-table">
+        <thead><tr id="weekHeadRow"></tr></thead>
+        <tbody id="weekBody"></tbody>
+      </table>
+    </div>
+    <p class="hint">Each bar is one day, 07:00&ndash;21:00 in hourly slivers &mdash; filled means booked. Click a day to jump the calendar above to it.</p>
+  </div>
+</div>
+
+<div class="drawer-overlay" id="overlay"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <div>
+      <h2 id="drawerTitle">Booking details</h2>
+      <div class="drawer-sub" id="drawerSub"></div>
+    </div>
+    <button class="drawer-close" id="drawerClose" aria-label="Close">&times;</button>
+  </div>
+  <div class="drawer-body">
+    <div class="detail-row"><span class="k">Instrument</span><span class="v" id="vwResource"></span></div>
+    <div class="detail-row"><span class="k">Date</span><span class="v" id="vwDate"></span></div>
+    <div class="detail-row"><span class="k">Time</span><span class="v" id="vwTime"></span></div>
+    <div class="detail-row"><span class="k">Booked by</span><span class="v" id="vwName"></span></div>
+  </div>
+  <div class="drawer-foot" id="drawerFoot"></div>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var DAY_START = 7*60, DAY_END = 21*60, SLOT_LEN = 60;
+
+  var SLOTS = [];
+  for (var s=DAY_START; s<DAY_END; s+=SLOT_LEN){
+    SLOTS.push({start:s, end:s+SLOT_LEN});
+  }
+
+  var CATS = [
+    {key:'cz384', label:'CZ Lab — 384-well, single plate', count:6},
+    {key:'br384', label:'BR Lab — 384-well, double plate', count:4},
+    {key:'liquid',label:'Liquid handling', count:2}
+  ];
+
+  var RESOURCES = [];
+  for (var i=1;i<=6;i++) RESOURCES.push({id:'cz384-'+i, cat:'cz384', code:'CZ-384 #'+i, meta:'384-well · single plate'});
+  for (var i=1;i<=4;i++) RESOURCES.push({id:'br384-'+i, cat:'br384', code:'BR-384 #'+i, meta:'384-well · double plate'});
+  RESOURCES.push({id:'firefly', cat:'liquid', code:'Firefly', meta:'Acoustic dispensing'});
+  RESOURCES.push({id:'mantis',  cat:'liquid', code:'Mantis',  meta:'Liquid dispensing'});
+  RESOURCES.forEach(function(r,i){ r.col = i+2; });
+  var RES_BY_ID = {};
+  RESOURCES.forEach(function(r){ RES_BY_ID[r.id]=r; });
+
+  function pad2(n){ return (n<10?'0':'')+n; }
+  function toISO(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+  function fromISO(s){ var p=s.split('-'); return new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); }
+  function minToHHMM(m){ return pad2(Math.floor(m/60))+':'+pad2(m%60); }
+  function slotLabel(idx){ var sl=SLOTS[idx]; return minToHHMM(sl.start)+'–'+minToHHMM(sl.end); }
+  function todayISO(){ return toISO(new Date()); }
+  function currentSlotIndex(){
+    var now = new Date();
+    var m = now.getHours()*60+now.getMinutes();
+    for (var i=0;i<SLOTS.length;i++){ if (m>=SLOTS[i].start && m<SLOTS[i].end) return i; }
+    return m < DAY_START ? 0 : -1;
+  }
+
+  var state = {
+    date: todayISO(),
+    bookings: [],
+    weekBookings: [],
+    weekStart: null,
+    weekEnd: null,
+    dbReady: false,
+    activeBooking: null,
+    selectedSlots: new Set(),
+    selectedResources: new Set()
+  };
+
+  // ---- Backend (Google Apps Script Web App over a Google Sheet) ----
+  var API_URL = 'https://script.google.com/macros/s/AKfycbybHgN2gUPvM8zsSgFiTTMmennLy5McPffEIjkgN3U3HBgwFXkEpPGml-_qOSBuQin5/exec';
+  var POLL_MS = 6000;
+
+  function normalizeBooking(b){
+    return {
+      id: b.id,
+      resourceId: b.resourceId,
+      dateISO: b.dateISO,
+      slotIndex: Number(b.slotIndex),
+      startMin: Number(b.startMin),
+      endMin: Number(b.endMin),
+      bookerName: b.bookerName || 'Unnamed'
+    };
+  }
+
+  function fetchJSON(url, opts){
+    return fetch(url, opts).then(function(res){
+      if (!res.ok) throw new Error('http_'+res.status);
+      return res.json();
+    });
+  }
+
+  function apiGetRange(startISO, endISO){
+    var url = API_URL + '?start=' + encodeURIComponent(startISO) + '&end=' + encodeURIComponent(endISO);
+    return fetchJSON(url, { method: 'GET' }).then(function(data){
+      if (!data || !data.ok) throw new Error('bad_response');
+      return data.bookings.map(normalizeBooking);
+    });
+  }
+
+  function apiAdd(payload){
+    return fetchJSON(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ action: 'add' }, payload))
+    });
+  }
+
+  function apiDelete(id){
+    return fetchJSON(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'delete', id: id })
+    });
+  }
+
+  var scheduler = document.getElementById('scheduler');
+  var statusPill = document.getElementById('statusPill');
+  var statusText = document.getElementById('statusText');
+  var dateWeekday = document.getElementById('dateWeekday');
+  var dateInput = document.getElementById('dateInput');
+  var legend = document.getElementById('legend');
+  var panelDate = document.getElementById('panelDate');
+  var slotChips = document.getElementById('slotChips');
+  var resChips = document.getElementById('resChips');
+  var resHint = document.getElementById('resHint');
+  var selectionSummary = document.getElementById('selectionSummary');
+  var qbName = document.getElementById('qbName');
+  var qbSubmit = document.getElementById('qbSubmit');
+  var panelError = document.getElementById('panelError');
+
+  function setStatus(mode, text){
+    statusPill.className = 'status-pill' + (mode ? ' '+mode : '');
+    statusText.textContent = text;
+  }
+
+  function buildLegend(){
+    CATS.forEach(function(c){
+      var el = document.createElement('span');
+      el.className = 'legend-item';
+      el.innerHTML = '<span class="legend-dot" style="background:var(--'+c.key+')"></span>'+c.label.replace('CZ Lab — ','CZ ').replace('BR Lab — ','BR ');
+      legend.appendChild(el);
+    });
+  }
+
+  function bookingFor(resourceId, slotIdx){
+    for (var i=0;i<state.bookings.length;i++){
+      var b = state.bookings[i];
+      if (b.resourceId===resourceId && b.slotIndex===slotIdx) return b;
+    }
+    return null;
+  }
+  function resourceAvailableForSlots(resourceId, slotsIterable){
+    var ok = true;
+    slotsIterable.forEach(function(idx){ if (bookingFor(resourceId, idx)) ok = false; });
+    return ok;
+  }
+
+  // ---- Grid ----
+  function buildGrid(){
+    var frag = document.createDocumentFragment();
+
+    var corner = document.createElement('div');
+    corner.className = 'cell-corner';
+    frag.appendChild(corner);
+
+    var startCol = 2;
+    CATS.forEach(function(c){
+      var el = document.createElement('div');
+      el.className = 'cell-cat cat-'+c.key;
+      el.style.gridColumn = startCol+' / span '+c.count;
+      el.textContent = c.label;
+      frag.appendChild(el);
+      startCol += c.count;
+    });
+
+    RESOURCES.forEach(function(r){
+      var el = document.createElement('div');
+      el.className = 'cell-res';
+      el.style.gridColumn = r.col;
+      el.innerHTML = '<span class="code">'+r.code+'</span><span class="meta">'+r.meta+'</span>';
+      el.title = r.code + ' — ' + r.meta;
+      frag.appendChild(el);
+    });
+
+    SLOTS.forEach(function(sl, idx){
+      var el = document.createElement('div');
+      el.className = 'cell-ruler';
+      el.setAttribute('data-slot', idx);
+      el.style.gridRow = 3+idx;
+      el.innerHTML = '<span class="rl-start">'+minToHHMM(sl.start)+'</span><span class="rl-end">–'+minToHHMM(sl.end)+'</span>';
+      frag.appendChild(el);
+    });
+
+    RESOURCES.forEach(function(r){
+      SLOTS.forEach(function(sl, idx){
+        var btn = document.createElement('button');
+        btn.className = 'slot';
+        btn.style.gridRow = 3+idx;
+        btn.style.gridColumn = r.col;
+        btn.setAttribute('data-resource', r.id);
+        btn.setAttribute('data-slot', idx);
+        btn.setAttribute('aria-label', r.code+' '+slotLabel(idx));
+        btn.addEventListener('click', onSlotCellClick);
+        frag.appendChild(btn);
+      });
+    });
+
+    scheduler.appendChild(frag);
+  }
+
+  function highlightCurrentSlot(){
+    var cur = state.date === todayISO() ? currentSlotIndex() : -1;
+    var rulers = scheduler.querySelectorAll('.cell-ruler');
+    for (var i=0;i<rulers.length;i++) rulers[i].classList.toggle('current', parseInt(rulers[i].getAttribute('data-slot'),10)===cur);
+    var slots = scheduler.querySelectorAll('.slot');
+    for (var j=0;j<slots.length;j++) slots[j].classList.toggle('current', parseInt(slots[j].getAttribute('data-slot'),10)===cur);
+  }
+
+  function refreshGridSelection(){
+    var slots = scheduler.querySelectorAll('.slot');
+    for (var i=0;i<slots.length;i++){
+      var el = slots[i];
+      var rid = el.getAttribute('data-resource');
+      var idx = parseInt(el.getAttribute('data-slot'),10);
+      el.classList.toggle('picked', state.selectedSlots.has(idx) && state.selectedResources.has(rid));
+    }
+  }
+
+  function renderBookings(){
+    var old = scheduler.querySelectorAll('.booking');
+    for (var i=0;i<old.length;i++) old[i].remove();
+    state.bookings.forEach(function(b){
+      var r = RES_BY_ID[b.resourceId];
+      if (!r) return;
+      var el = document.createElement('button');
+      el.className = 'booking ' + r.cat;
+      el.style.gridRow = 3+b.slotIndex;
+      el.style.gridColumn = r.col;
+      el.title = r.code+' — '+slotLabel(b.slotIndex)+' — booked by '+b.bookerName;
+      el.innerHTML = '<span class="name"></span><span class="time"></span>';
+      el.querySelector('.name').textContent = b.bookerName;
+      el.querySelector('.time').textContent = slotLabel(b.slotIndex);
+      el.addEventListener('click', function(bk){ return function(){ openViewDrawer(bk); }; }(b));
+      scheduler.appendChild(el);
+    });
+    validateSelectionsAgainstLive();
+    renderAll();
+  }
+
+  function onSlotCellClick(e){
+    var resourceId = e.currentTarget.getAttribute('data-resource');
+    var slotIdx = parseInt(e.currentTarget.getAttribute('data-slot'), 10);
+    if (bookingFor(resourceId, slotIdx)) return;
+    if (!state.selectedSlots.has(slotIdx)) addSlotInternal(slotIdx);
+    if (resourceAvailableForSlots(resourceId, state.selectedSlots)){
+      if (!state.selectedResources.has(resourceId)){
+        state.selectedResources.add(resourceId);
+        showToast('Added '+RES_BY_ID[resourceId].code+' · '+slotLabel(slotIdx));
+      }
+    } else {
+      showToast(RES_BY_ID[resourceId].code+' conflicts with a time you already picked.');
+    }
+    renderAll();
+  }
+
+  // ---- Selection logic ----
+  function addSlotInternal(idx){
+    state.selectedSlots.add(idx);
+    var dropped = [];
+    state.selectedResources.forEach(function(rid){
+      if (bookingFor(rid, idx)) dropped.push(rid);
+    });
+    dropped.forEach(function(rid){ state.selectedResources.delete(rid); });
+    if (dropped.length){
+      showToast('Removed '+dropped.map(function(rid){ return RES_BY_ID[rid].code; }).join(', ')+' — booked at '+slotLabel(idx)+'.');
+    }
+  }
+
+  function toggleSlot(idx){
+    if (state.selectedSlots.has(idx)) state.selectedSlots.delete(idx);
+    else addSlotInternal(idx);
+    renderAll();
+  }
+
+  function toggleResource(rid){
+    if (state.selectedResources.has(rid)){ state.selectedResources.delete(rid); renderAll(); return; }
+    if (state.selectedSlots.size===0){ showToast('Pick a time first.'); return; }
+    if (!resourceAvailableForSlots(rid, state.selectedSlots)) return;
+    state.selectedResources.add(rid);
+    renderAll();
+  }
+
+  function validateSelectionsAgainstLive(){
+    var dropped = [];
+    state.selectedResources.forEach(function(rid){
+      if (!resourceAvailableForSlots(rid, state.selectedSlots)) dropped.push(rid);
+    });
+    dropped.forEach(function(rid){ state.selectedResources.delete(rid); });
+    if (dropped.length){
+      showToast('Just booked by someone else: '+dropped.map(function(rid){ return RES_BY_ID[rid].code; }).join(', '));
+    }
+  }
+
+  // ---- Panel rendering ----
+  function renderSlotChips(){
+    slotChips.innerHTML = '';
+    SLOTS.forEach(function(sl, idx){
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip time' + (state.selectedSlots.has(idx) ? ' selected' : '');
+      chip.textContent = minToHHMM(sl.start)+'–'+minToHHMM(sl.end);
+      chip.addEventListener('click', function(i){ return function(){ toggleSlot(i); }; }(idx));
+      slotChips.appendChild(chip);
+    });
+  }
+
+  function renderResourceChips(){
+    resChips.innerHTML = '';
+    var hasSlots = state.selectedSlots.size>0;
+    resHint.textContent = hasSlots ? 'Solid = free for your selected time · struck-through = already booked.' : 'Pick a time above to see what’s free.';
+    RESOURCES.forEach(function(r){
+      var taken = hasSlots && !resourceAvailableForSlots(r.id, state.selectedSlots);
+      var selected = state.selectedResources.has(r.id);
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip ' + r.cat + (selected ? ' selected' : '') + (taken ? ' taken' : '') + (!hasSlots ? ' taken' : '');
+      chip.textContent = r.code;
+      chip.disabled = !hasSlots || taken;
+      if (!hasSlots) chip.title = 'Pick a time first';
+      else if (taken){
+        var b = bookingFor(r.id, findConflictSlot(r.id));
+        chip.title = b ? (r.code+' — booked by '+b.bookerName) : (r.code+' — not free for the whole selection');
+      } else {
+        chip.title = r.code+' — available';
+      }
+      chip.addEventListener('click', function(id){ return function(){ toggleResource(id); }; }(r.id));
+      resChips.appendChild(chip);
+    });
+  }
+
+  function findConflictSlot(resourceId){
+    var found = -1;
+    state.selectedSlots.forEach(function(idx){ if (found===-1 && bookingFor(resourceId, idx)) found = idx; });
+    return found;
+  }
+
+  function updateSummary(){
+    var slots = Array.from(state.selectedSlots).sort(function(a,b){ return a-b; });
+    var resources = Array.from(state.selectedResources);
+    var count = slots.length * resources.length;
+    panelError.classList.remove('show');
+    if (count===0){
+      selectionSummary.textContent = 'Pick a time and at least one instrument.';
+      qbSubmit.textContent = 'Select time & instrument';
+      qbSubmit.disabled = true;
+      return;
+    }
+    var timeText = slots.length===SLOTS.length ? 'the whole day' : slots.map(slotLabel).join(', ');
+    selectionSummary.innerHTML = '<strong>'+resources.length+'</strong> instrument'+(resources.length>1?'s':'')+' × <strong>'+slots.length+'</strong> time block'+(slots.length>1?'s':'')+' = <strong>'+count+'</strong> booking'+(count>1?'s':'')+'<br>'+timeText;
+    qbSubmit.textContent = 'Book '+count+' slot'+(count>1?'s':'');
+    qbSubmit.disabled = !qbName.value.trim();
+  }
+
+  function renderAll(){
+    renderSlotChips();
+    renderResourceChips();
+    refreshGridSelection();
+    updateSummary();
+  }
+
+  document.getElementById('slotAll').addEventListener('click', function(){
+    for (var i=0;i<SLOTS.length;i++){ if (!state.selectedSlots.has(i)) addSlotInternal(i); }
+    renderAll();
+  });
+  document.getElementById('slotClear').addEventListener('click', function(){
+    state.selectedSlots.clear();
+    state.selectedResources.clear();
+    renderAll();
+  });
+  document.getElementById('resAll').addEventListener('click', function(){
+    if (state.selectedSlots.size===0){ showToast('Pick a time first.'); return; }
+    RESOURCES.forEach(function(r){ if (resourceAvailableForSlots(r.id, state.selectedSlots)) state.selectedResources.add(r.id); });
+    renderAll();
+  });
+  document.getElementById('resClear').addEventListener('click', function(){
+    state.selectedResources.clear();
+    renderAll();
+  });
+  qbName.addEventListener('input', updateSummary);
+
+  qbSubmit.addEventListener('click', async function(){
+    panelError.classList.remove('show');
+    var slots = Array.from(state.selectedSlots).sort(function(a,b){ return a-b; });
+    var resources = Array.from(state.selectedResources);
+    var name = qbName.value.trim();
+    if (!name || slots.length===0 || resources.length===0) return;
+
+    var jobs = [], preConflicts = 0;
+    resources.forEach(function(rid){
+      slots.forEach(function(idx){
+        if (bookingFor(rid, idx)) preConflicts++;
+        else jobs.push({rid:rid, idx:idx});
+      });
+    });
+    if (jobs.length===0){
+      panelError.textContent = 'Those are all taken now — pick again.';
+      panelError.classList.add('show');
+      renderAll();
+      return;
+    }
+
+    qbSubmit.disabled = true;
+    qbSubmit.textContent = 'Booking…';
+
+    var outcomes = await Promise.allSettled(jobs.map(function(j){
+      return apiAdd({
+        resourceId: j.rid,
+        dateISO: state.date,
+        slotIndex: j.idx,
+        startMin: SLOTS[j.idx].start,
+        endMin: SLOTS[j.idx].end,
+        bookerName: name
+      });
+    }));
+
+    var succeeded = 0, conflicts = preConflicts, failed = 0;
+    outcomes.forEach(function(o){
+      if (o.status==='fulfilled' && o.value && o.value.ok) succeeded++;
+      else if (o.status==='fulfilled' && o.value && o.value.error==='conflict') conflicts++;
+      else failed++;
+    });
+
+    try { localStorage.setItem('instrumentBooking:name', name); } catch(e){}
+
+    var msg = succeeded>0 ? ('Booked '+succeeded+' slot'+(succeeded>1?'s':'')+'.') : 'Nothing booked.';
+    if (conflicts>0) msg += ' ('+conflicts+' already taken.)';
+    if (failed>0) msg += ' ('+failed+' failed to save — try those again.)';
+    showToast(msg);
+
+    state.selectedSlots.clear();
+    state.selectedResources.clear();
+    await refreshData();
+  });
+
+  // ---- Drawer (view / cancel) ----
+  var overlay = document.getElementById('overlay');
+  var drawer = document.getElementById('drawer');
+  var drawerSub = document.getElementById('drawerSub');
+  var drawerFoot = document.getElementById('drawerFoot');
+  var cancelArmed = false;
+
+  function openDrawer(){ overlay.classList.add('open'); drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false'); }
+  function closeDrawer(){ overlay.classList.remove('open'); drawer.classList.remove('open'); drawer.setAttribute('aria-hidden','true'); state.activeBooking=null; cancelArmed=false; }
+  document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+  overlay.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function(e){ if (e.key==='Escape') closeDrawer(); });
+
+  function openViewDrawer(booking){
+    var r = RES_BY_ID[booking.resourceId];
+    state.activeBooking = booking;
+    cancelArmed = false;
+    drawerSub.textContent = r.code;
+    document.getElementById('vwResource').textContent = r.code + ' — ' + r.meta;
+    document.getElementById('vwDate').textContent = formatDateLong(state.date);
+    document.getElementById('vwTime').textContent = slotLabel(booking.slotIndex);
+    document.getElementById('vwName').textContent = booking.bookerName;
+    renderCancelFoot();
+    openDrawer();
+  }
+
+  function renderCancelFoot(){
+    drawerFoot.innerHTML = '';
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'btn'; closeBtn.textContent = 'Close';
+    closeBtn.addEventListener('click', closeDrawer);
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-danger';
+    cancelBtn.textContent = cancelArmed ? 'Click again to confirm' : 'Cancel booking';
+    cancelBtn.addEventListener('click', function(){
+      if (!state.dbReady){ showToast('Sync unavailable right now.'); return; }
+      if (cancelArmed){ performCancel(); }
+      else { cancelArmed = true; renderCancelFoot(); setTimeout(function(){ if (cancelArmed){ cancelArmed=false; renderCancelFoot(); } }, 4000); }
+    });
+    drawerFoot.appendChild(closeBtn);
+    drawerFoot.appendChild(cancelBtn);
+  }
+
+  function performCancel(){
+    var b = state.activeBooking;
+    if (!b) return;
+    apiDelete(b.id).then(function(){
+      showToast('Booking cancelled.');
+      closeDrawer();
+      return refreshData();
+    }).catch(function(){ showToast('Could not cancel — try again.'); });
+  }
+
+  // ---- Toast ----
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function showToast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 3200);
+  }
+
+  // ---- Date navigation ----
+  function formatDateLong(iso){
+    return fromISO(iso).toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  }
+  function formatDateShort(iso){
+    return fromISO(iso).toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'});
+  }
+  function mondayOf(iso){
+    var d = fromISO(iso);
+    var offset = (d.getDay()+6)%7; // days since Monday
+    d.setDate(d.getDate()-offset);
+    return d;
+  }
+  function weekRangeFor(iso){
+    var start = mondayOf(iso);
+    var end = new Date(start); end.setDate(end.getDate()+6);
+    return { startISO: toISO(start), endISO: toISO(end) };
+  }
+  function setDate(iso){
+    state.date = iso;
+    dateInput.value = iso;
+    dateWeekday.textContent = formatDateLong(iso);
+    panelDate.textContent = formatDateShort(iso);
+    state.selectedSlots.clear();
+    state.selectedResources.clear();
+    highlightCurrentSlot();
+    renderAll();
+    refreshData();
+  }
+  document.getElementById('prevDay').addEventListener('click', function(){ var d=fromISO(state.date); d.setDate(d.getDate()-1); setDate(toISO(d)); });
+  document.getElementById('nextDay').addEventListener('click', function(){ var d=fromISO(state.date); d.setDate(d.getDate()+1); setDate(toISO(d)); });
+  document.getElementById('todayBtn').addEventListener('click', function(){ setDate(todayISO()); });
+  dateInput.addEventListener('change', function(){ if (dateInput.value) setDate(dateInput.value); });
+  document.getElementById('panelChangeDate').addEventListener('click', function(){ dateInput.focus(); dateInput.showPicker && dateInput.showPicker(); });
+
+  // ---- Data refresh (polling the Apps Script backend) ----
+  function refreshData(){
+    var range = weekRangeFor(state.date);
+    state.weekStart = range.startISO;
+    state.weekEnd = range.endISO;
+    return apiGetRange(state.weekStart, state.weekEnd).then(function(bookings){
+      state.weekBookings = bookings;
+      state.bookings = bookings.filter(function(b){ return b.dateISO === state.date; });
+      state.dbReady = true;
+      setStatus('live', 'Live — synced with the lab');
+      renderBookings();
+      renderWeekTable();
+    }).catch(function(){
+      state.dbReady = false;
+      setStatus('down', 'Sync error — retrying…');
+    });
+  }
+
+  function startPolling(){
+    setInterval(function(){
+      if (document.visibilityState === 'visible') refreshData();
+    }, POLL_MS);
+    document.addEventListener('visibilitychange', function(){
+      if (document.visibilityState === 'visible') refreshData();
+    });
+  }
+
+  function weekRangeLabel(){
+    var start = fromISO(state.weekStart), end = fromISO(state.weekEnd);
+    var startTxt = start.toLocaleDateString('en-GB', {day:'numeric', month: start.getMonth()===end.getMonth() ? undefined : 'short'});
+    var endTxt = end.toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'});
+    return startTxt+'–'+endTxt;
+  }
+
+  function renderWeekTable(){
+    if (!state.weekStart) return;
+    var start = fromISO(state.weekStart);
+    var days = [];
+    for (var i=0;i<7;i++){ var d = new Date(start); d.setDate(d.getDate()+i); days.push(d); }
+    var todayIso = todayISO();
+
+    document.getElementById('weekRange').textContent = weekRangeLabel();
+
+    var headRow = document.getElementById('weekHeadRow');
+    headRow.innerHTML = '<th class="week-corner"></th>';
+    days.forEach(function(d){
+      var iso = toISO(d);
+      var th = document.createElement('th');
+      th.className = 'week-th' + (iso===todayIso?' today':'') + (iso===state.date?' selected':'');
+      th.innerHTML = '<span class="wd">'+d.toLocaleDateString('en-GB',{weekday:'short'})+'</span><span class="dd">'+d.getDate()+' '+d.toLocaleDateString('en-GB',{month:'short'})+'</span>';
+      th.addEventListener('click', function(targetIso){ return function(){ setDate(targetIso); }; }(iso));
+      headRow.appendChild(th);
+    });
+
+    var body = document.getElementById('weekBody');
+    body.innerHTML = '';
+    RESOURCES.forEach(function(r){
+      var tr = document.createElement('tr');
+      var label = document.createElement('td');
+      label.className = 'week-res-label';
+      label.innerHTML = '<span class="cat-dot '+r.cat+'"></span>'+r.code;
+      tr.appendChild(label);
+      days.forEach(function(d){
+        var iso = toISO(d);
+        var dayBookings = state.weekBookings.filter(function(b){ return b.resourceId===r.id && b.dateISO===iso; });
+        var bySlot = {};
+        dayBookings.forEach(function(b){ bySlot[b.slotIndex] = b; });
+        var td = document.createElement('td');
+        td.className = 'week-cell' + (iso===todayIso?' today-col':'');
+        var bar = document.createElement('div');
+        bar.className = 'occ-bar';
+        for (var s=0;s<SLOTS.length;s++){
+          var seg = document.createElement('span');
+          seg.className = 'occ-seg' + (bySlot[s] ? (' booked '+r.cat) : '');
+          bar.appendChild(seg);
+        }
+        td.appendChild(bar);
+        var count = dayBookings.length;
+        var sorted = dayBookings.slice().sort(function(a,b){ return a.slotIndex-b.slotIndex; });
+        td.title = r.code+' · '+d.toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'long'})+' — '+
+          (count===0 ? 'free all day' : sorted.map(function(b){ return slotLabel(b.slotIndex)+' '+b.bookerName; }).join(', '));
+        td.addEventListener('click', function(targetIso){ return function(){ setDate(targetIso); document.getElementById('schedulerScroll').scrollIntoView({behavior:'smooth', block:'start'}); }; }(iso));
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  // ---- Init ----
+  buildLegend();
+  buildGrid();
+  try { qbName.value = localStorage.getItem('instrumentBooking:name') || ''; } catch(e){}
+  setStatus('', 'Connecting…');
+  setDate(todayISO());
+  setInterval(highlightCurrentSlot, 60000);
+  startPolling();
+})();
+</script>
+</body>
+</html>
