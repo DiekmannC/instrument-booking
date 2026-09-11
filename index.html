@@ -205,6 +205,10 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
 .booking.pending .name{font-weight:600; font-style:italic;}
 @keyframes pending-pulse{ 0%,100%{opacity:.55;} 50%{opacity:.85;} }
 @media (prefers-reduced-motion: reduce){ .booking.pending{animation:none;} }
+.booking.cancelling{
+  cursor:default; opacity:.5; text-decoration:line-through; animation:pending-pulse 1.1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce){ .booking.cancelling{animation:none;} }
 .cat-cz384{background:var(--cz384);}
 .cat-br384{background:var(--br384);}
 .cat-br96{background:var(--br96);}
@@ -475,8 +479,27 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     selectedResources: new Set(),
     selectMode: false,
     selectedBookingIds: new Set(),
-    pendingKeys: new Set()
+    pendingKeys: new Set(),
+    cancellingIds: new Set()
   };
+
+  // Patch the in-memory booking lists directly from a write's own response
+  // instead of firing a whole extra GET afterward. The write already told us
+  // exactly what changed, so there's nothing a follow-up fetch would learn
+  // that we don't already know — it would just be another ~1.5-2s round trip
+  // spent re-confirming what we just did. The regular poll loop (every
+  // POLL_MS) still runs independently and will reconcile with the server
+  // shortly anyway, so this never lets local state drift for long.
+  function applyAddedBookings(items){
+    items.forEach(function(b){ state.weekBookings.push(b); });
+    state.bookings = state.weekBookings.filter(function(b){ return b.dateISO === state.date; });
+  }
+  function applyRemovedBookingIds(ids){
+    var idSet = {};
+    ids.forEach(function(id){ idSet[id] = true; });
+    state.weekBookings = state.weekBookings.filter(function(b){ return !idSet[b.id]; });
+    state.bookings = state.bookings.filter(function(b){ return !idSet[b.id]; });
+  }
 
   // ---- Backend (Google Apps Script Web App over a Google Sheet) ----
   var API_URL = 'https://script.google.com/macros/s/AKfycbwlKS6iNV1IKB3U1Fd7xO4oHSnZP9ZXSSE5LWha-ddz6BkAzJe_HfTPxZNpnMBp9GgT/exec';
@@ -680,15 +703,17 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
       liveIds[b.id] = true;
       var r = RES_BY_ID[b.resourceId];
       if (!r) return;
+      var cancelling = state.cancellingIds.has(b.id);
       var el = document.createElement('button');
-      el.className = 'booking ' + r.cat + (state.selectedBookingIds.has(b.id) ? ' selected' : '');
+      el.className = 'booking ' + r.cat + (state.selectedBookingIds.has(b.id) ? ' selected' : '') + (cancelling ? ' cancelling' : '');
       el.style.gridRow = 3+b.slotIndex;
       el.style.gridColumn = r.col;
-      el.title = r.code+' — '+slotLabel(b.slotIndex)+' — booked by '+b.bookerName;
+      el.title = r.code+' — '+slotLabel(b.slotIndex)+(cancelling ? ' — cancelling…' : ' — booked by '+b.bookerName);
       el.innerHTML = '<span class="check" aria-hidden="true"></span><span class="name"></span><span class="time"></span>';
-      el.querySelector('.name').textContent = b.bookerName;
+      el.querySelector('.name').textContent = cancelling ? 'Cancelling…' : b.bookerName;
       el.querySelector('.time').textContent = slotLabel(b.slotIndex);
-      el.addEventListener('click', function(bk){ return function(){ onBookingClick(bk); }; }(b));
+      if (cancelling) el.disabled = true;
+      else el.addEventListener('click', function(bk){ return function(){ onBookingClick(bk); }; }(b));
       scheduler.appendChild(el);
     });
 
@@ -801,24 +826,45 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     var ids = Array.from(state.selectedBookingIds);
     bulkCancel.disabled = true;
     bulkCancel.textContent = 'Cancelling…';
-    var ok = 0, failed = 0;
+    // Show the selected bookings as "cancelling" right away instead of
+    // leaving them looking normal for the couple of seconds the request
+    // takes — mirrors the "Booking…" placeholder used for adds.
+    ids.forEach(function(id){ state.cancellingIds.add(id); });
+    renderBookings();
+
+    var ok = 0, failed = 0, needsResync = false;
     try {
       var resp = await apiBatchDelete(ids);
       if (resp && resp.ok){
         ok = resp.deleted;
         failed = ids.length - resp.deleted;
+        if (failed === 0){
+          // Full success and we know exactly which ids are gone — remove
+          // them locally instead of spending another ~1.5-2s round trip
+          // just to have the server confirm what it just told us.
+          applyRemovedBookingIds(ids);
+        } else {
+          // Partial failure: the response doesn't say which specific ids
+          // didn't delete, so re-sync with the server to be sure.
+          needsResync = true;
+        }
       } else {
         failed = ids.length;
+        needsResync = true;
       }
     } catch(e){
       failed = ids.length;
+      needsResync = true;
     }
+    ids.forEach(function(id){ state.cancellingIds.delete(id); });
+
     var msg = ok>0 ? ('Cancelled '+ok+' booking'+(ok>1?'s':'')+'.') : 'Nothing cancelled.';
     if (failed>0) msg += ' ('+failed+' failed — try again.)';
     showToast(msg);
     bulkArmed = false;
     exitSelectMode();
-    await refreshData();
+    if (needsResync) await refreshData();
+    else renderWeekTable();
   });
 
   function onSlotCellClick(e){
@@ -1006,19 +1052,35 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     });
 
     var succeeded = 0, conflicts = preConflicts, failed = 0;
+    var addedFailed = false;
     try {
       var resp = await apiBatchAdd(items);
       if (resp && resp.ok && resp.results){
-        resp.results.forEach(function(r){
-          if (r.ok) succeeded++;
+        // The response already tells us exactly which items landed (with
+        // their new ids) and which didn't — apply that directly instead of
+        // firing a whole extra fetch just to re-learn what we already know.
+        var landed = [];
+        resp.results.forEach(function(r, i){
+          if (r.ok){
+            succeeded++;
+            var item = items[i];
+            landed.push({
+              id: r.id, resourceId: item.resourceId, dateISO: item.dateISO,
+              slotIndex: item.slotIndex, startMin: item.startMin, endMin: item.endMin,
+              bookerName: item.bookerName
+            });
+          }
           else if (r.error === 'conflict') conflicts++;
           else failed++;
         });
+        if (landed.length) applyAddedBookings(landed);
       } else {
         failed += items.length;
+        addedFailed = true;
       }
     } catch(e){
       failed += items.length;
+      addedFailed = true;
     }
 
     jobs.forEach(function(j){ state.pendingKeys.delete(j.rid+'|'+j.idx); });
@@ -1032,7 +1094,12 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
 
     state.selectedSlots.clear();
     state.selectedResources.clear();
-    await refreshData();
+    renderBookings();
+    renderWeekTable();
+    // Only fall back to a real refetch if we couldn't tell what actually
+    // happened (e.g. the request itself errored/timed out) — otherwise the
+    // response already gave us ground truth and the grid is already correct.
+    if (addedFailed) await refreshData();
   });
 
   // ---- Drawer (view / cancel) ----
@@ -1081,11 +1148,27 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   function performCancel(){
     var b = state.activeBooking;
     if (!b) return;
-    apiDelete(b.id).then(function(){
+    state.cancellingIds.add(b.id);
+    renderBookings();
+    apiDelete(b.id).then(function(resp){
+      state.cancellingIds.delete(b.id);
+      if (!resp || !resp.ok){
+        renderBookings();
+        showToast('Could not cancel — try again.');
+        return;
+      }
+      // The delete already succeeded server-side — drop it locally instead
+      // of firing a whole extra fetch just to hear that back.
+      applyRemovedBookingIds([b.id]);
       showToast('Booking cancelled.');
       closeDrawer();
-      return refreshData();
-    }).catch(function(){ showToast('Could not cancel — try again.'); });
+      renderBookings();
+      renderWeekTable();
+    }).catch(function(){
+      state.cancellingIds.delete(b.id);
+      renderBookings();
+      showToast('Could not cancel — try again.');
+    });
   }
 
   // ---- Toast ----
