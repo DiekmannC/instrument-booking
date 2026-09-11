@@ -483,10 +483,22 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     };
   }
 
+  var FETCH_TIMEOUT_MS = 15000;
+
   function fetchJSON(url, opts){
-    return fetch(url, opts).then(function(res){
+    // Google Apps Script can occasionally take a long time to respond. Without
+    // a timeout, a single slow request would leave a "Booking…" button (or the
+    // poll loop) stuck indefinitely with no feedback. Abort and fail instead.
+    var controller = new AbortController();
+    var timer = setTimeout(function(){ controller.abort(); }, FETCH_TIMEOUT_MS);
+    var merged = Object.assign({}, opts, { signal: controller.signal });
+    return fetch(url, merged).then(function(res){
+      clearTimeout(timer);
       if (!res.ok) throw new Error('http_'+res.status);
       return res.json();
+    }).catch(function(err){
+      clearTimeout(timer);
+      throw err;
     });
   }
 
@@ -1037,7 +1049,7 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     state.selectedResources.clear();
     highlightCurrentSlot();
     renderAll();
-    refreshData();
+    triggerRefreshNow();
   }
   document.getElementById('prevDay').addEventListener('click', function(){ var d=fromISO(state.date); d.setDate(d.getDate()-1); setDate(toISO(d)); });
   document.getElementById('nextDay').addEventListener('click', function(){ var d=fromISO(state.date); d.setDate(d.getDate()+1); setDate(toISO(d)); });
@@ -1046,11 +1058,18 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   document.getElementById('panelChangeDate').addEventListener('click', function(){ dateInput.focus(); dateInput.showPicker && dateInput.showPicker(); });
 
   // ---- Data refresh (polling the Apps Script backend) ----
+  // Single-flight guard: if a refresh is already in the air, hand back that
+  // same promise instead of starting a second one. Apps Script responses can
+  // take anywhere from well under a second to several seconds, so without
+  // this, a manual refresh (changing the date, switching back to the tab)
+  // could easily overlap with an in-progress poll and double up requests.
+  var refreshInFlight = null;
   function refreshData(){
+    if (refreshInFlight) return refreshInFlight;
     var range = weekRangeFor(state.date);
     state.weekStart = range.startISO;
     state.weekEnd = range.endISO;
-    return apiGetRange(state.weekStart, state.weekEnd).then(function(bookings){
+    refreshInFlight = apiGetRange(state.weekStart, state.weekEnd).then(function(bookings){
       state.weekBookings = bookings;
       state.bookings = bookings.filter(function(b){ return b.dateISO === state.date; });
       state.dbReady = true;
@@ -1060,15 +1079,34 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     }).catch(function(){
       state.dbReady = false;
       setStatus('down', 'Sync error — retrying…');
+    }).then(function(){
+      refreshInFlight = null;
     });
+    return refreshInFlight;
   }
 
+  // Self-rescheduling loop, not a fixed setInterval: this always waits for
+  // the in-flight request (from any trigger — the poll tick, a date change,
+  // or the tab regaining focus) to settle before counting down again, so
+  // slow responses can never cause requests to pile up.
+  var pollTimer = null;
+  function scheduleNextPoll(){
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = setTimeout(pollTick, POLL_MS);
+  }
+  function triggerRefreshNow(){
+    if (pollTimer) clearTimeout(pollTimer);
+    refreshData().then(scheduleNextPoll, scheduleNextPoll);
+  }
+  function pollTick(){
+    if (document.visibilityState !== 'visible'){ scheduleNextPoll(); return; }
+    triggerRefreshNow();
+  }
   function startPolling(){
-    setInterval(function(){
-      if (document.visibilityState === 'visible') refreshData();
-    }, POLL_MS);
+    // setDate(todayISO()) during init already called triggerRefreshNow() and
+    // that kicked off the self-rescheduling chain — nothing more to start here.
     document.addEventListener('visibilitychange', function(){
-      if (document.visibilityState === 'visible') refreshData();
+      if (document.visibilityState === 'visible') triggerRefreshNow();
     });
   }
 
