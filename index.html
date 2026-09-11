@@ -150,6 +150,7 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   grid-template-rows:32px 46px repeat(14, 46px);
   min-width:902px;
   transition:opacity .1s;
+  user-select:none; /* dragging across cells to select them shouldn't select page text */
 }
 .scheduler.loading{opacity:.55;}
 @media (prefers-reduced-motion: reduce){ .scheduler{transition:none;} }
@@ -669,6 +670,7 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
         btn.setAttribute('data-slot', idx);
         btn.setAttribute('aria-label', r.code+' '+slotLabel(idx));
         btn.addEventListener('click', onSlotCellClick);
+        btn.addEventListener('pointerdown', onSlotPointerDown);
         frag.appendChild(btn);
       });
     });
@@ -706,6 +708,7 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
       var cancelling = state.cancellingIds.has(b.id);
       var el = document.createElement('button');
       el.className = 'booking ' + r.cat + (state.selectedBookingIds.has(b.id) ? ' selected' : '') + (cancelling ? ' cancelling' : '');
+      el.setAttribute('data-booking-id', b.id);
       el.style.gridRow = 3+b.slotIndex;
       el.style.gridColumn = r.col;
       el.title = r.code+' — '+slotLabel(b.slotIndex)+(cancelling ? ' — cancelling…' : ' — booked by '+b.bookerName);
@@ -713,7 +716,10 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
       el.querySelector('.name').textContent = cancelling ? 'Cancelling…' : b.bookerName;
       el.querySelector('.time').textContent = slotLabel(b.slotIndex);
       if (cancelling) el.disabled = true;
-      else el.addEventListener('click', function(bk){ return function(){ onBookingClick(bk); }; }(b));
+      else {
+        el.addEventListener('click', function(bk){ return function(){ onBookingClick(bk); }; }(b));
+        el.addEventListener('pointerdown', function(bk){ return function(e){ onBookingPointerDown(e, bk); }; }(b));
+      }
       scheduler.appendChild(el);
     });
 
@@ -762,8 +768,8 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   var bulkCancel = document.getElementById('bulkCancel');
   var bulkExit = document.getElementById('bulkExit');
   var bulkArmed = false;
-  var DEFAULT_HINT = 'Click open cells in the grid to add them to Quick Book, or use the chips on the left. Click an existing booking to view or cancel it.';
-  var SELECT_HINT = 'Click bookings in the grid to select them, then cancel them all at once below.';
+  var DEFAULT_HINT = 'Click or drag across open cells in the grid to add them to Quick Book, or use the chips on the left. Click an existing booking to view or cancel it.';
+  var SELECT_HINT = 'Click or drag across bookings in the grid to select them, then cancel them all at once below.';
 
   function toggleBookingSelection(id){
     if (state.selectedBookingIds.has(id)) state.selectedBookingIds.delete(id);
@@ -883,6 +889,116 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     }
     renderAll();
   }
+
+  // ---- Drag-select (paint across cells) ----
+  // Booking one slot at a time by clicking each cell works, but for a whole
+  // row or block it's a lot of individual clicks. This lets you press down
+  // on a cell and drag across others — open cells for a quick-book, or
+  // existing bookings (while in select mode) for a bulk cancel — applying
+  // the exact same logic as clicking each one, just faster. Mouse only: on
+  // touch, the same gesture is needed for scrolling the grid, so dragging
+  // there would fight the page instead of helping.
+  var DRAG_THRESHOLD_PX = 6;
+  var dragCandidate = null; // {mode, startX, startY, resourceId, slotIdx, bookingId}
+  var dragSel = null;       // {mode, targetState, touched:Set, rafPending}
+
+  function onSlotPointerDown(e){
+    if (state.selectMode || e.pointerType !== 'mouse' || e.button !== 0) return;
+    var resourceId = e.currentTarget.getAttribute('data-resource');
+    var slotIdx = parseInt(e.currentTarget.getAttribute('data-slot'), 10);
+    if (bookingFor(resourceId, slotIdx)) return; // occupied — nothing to drag from here
+    dragCandidate = { mode:'book', startX:e.clientX, startY:e.clientY, resourceId:resourceId, slotIdx:slotIdx };
+  }
+
+  function onBookingPointerDown(e, booking){
+    if (!state.selectMode || e.pointerType !== 'mouse' || e.button !== 0) return;
+    dragCandidate = { mode:'cancel', startX:e.clientX, startY:e.clientY, bookingId:booking.id };
+  }
+
+  function applyBookCell(resourceId, slotIdx){
+    var key = resourceId+'|'+slotIdx;
+    if (dragSel.touched.has(key)) return;
+    dragSel.touched.add(key);
+    if (bookingFor(resourceId, slotIdx)) return;
+    if (!state.selectedSlots.has(slotIdx)) addSlotInternal(slotIdx);
+    if (resourceAvailableForSlots(resourceId, state.selectedSlots)) state.selectedResources.add(resourceId);
+  }
+
+  function applyCancelCell(bookingId){
+    if (dragSel.touched.has(bookingId)) return;
+    dragSel.touched.add(bookingId);
+    if (dragSel.targetState) state.selectedBookingIds.add(bookingId);
+    else state.selectedBookingIds.delete(bookingId);
+  }
+
+  function scheduleDragRender(){
+    if (!dragSel || dragSel.rafPending) return;
+    dragSel.rafPending = true;
+    requestAnimationFrame(function(){
+      if (!dragSel) return;
+      dragSel.rafPending = false;
+      if (dragSel.mode==='book') renderAll();
+      else { renderBookings(); updateBulkBar(); }
+    });
+  }
+
+  function promoteToDrag(clientX, clientY){
+    var c = dragCandidate;
+    if (c.mode==='book'){
+      dragSel = { mode:'book', touched:new Set(), rafPending:false };
+      applyBookCell(c.resourceId, c.slotIdx);
+    } else {
+      dragSel = { mode:'cancel', targetState: !state.selectedBookingIds.has(c.bookingId), touched:new Set(), rafPending:false };
+      applyCancelCell(c.bookingId);
+    }
+    handlePointerMoveTarget(clientX, clientY);
+    scheduleDragRender();
+  }
+
+  function handlePointerMoveTarget(clientX, clientY){
+    var el = document.elementFromPoint(clientX, clientY);
+    if (!el) return;
+    if (dragSel.mode==='book'){
+      var slotEl = el.closest && el.closest('.slot');
+      if (slotEl && scheduler.contains(slotEl)){
+        applyBookCell(slotEl.getAttribute('data-resource'), parseInt(slotEl.getAttribute('data-slot'),10));
+      }
+    } else {
+      var bEl = el.closest && el.closest('.booking');
+      if (bEl && scheduler.contains(bEl) && !bEl.disabled && !bEl.classList.contains('pending') && !bEl.classList.contains('cancelling')){
+        var bid = bEl.getAttribute('data-booking-id');
+        if (bid) applyCancelCell(bid);
+      }
+    }
+  }
+
+  function endDrag(){
+    dragCandidate = null;
+    if (!dragSel) return;
+    var mode = dragSel.mode, n = dragSel.touched.size;
+    dragSel = null;
+    if (mode==='book'){
+      renderAll();
+      if (n>1) showToast('Added '+n+' cell'+(n>1?'s':'')+' to your selection.');
+    } else {
+      renderBookings();
+      updateBulkBar();
+    }
+  }
+
+  document.addEventListener('pointermove', function(e){
+    if (dragSel){
+      handlePointerMoveTarget(e.clientX, e.clientY);
+      scheduleDragRender();
+      return;
+    }
+    if (dragCandidate){
+      var dx = e.clientX-dragCandidate.startX, dy = e.clientY-dragCandidate.startY;
+      if (Math.sqrt(dx*dx+dy*dy) >= DRAG_THRESHOLD_PX) promoteToDrag(e.clientX, e.clientY);
+    }
+  });
+  document.addEventListener('pointerup', endDrag);
+  document.addEventListener('pointercancel', endDrag);
 
   // ---- Selection logic ----
   function addSlotInternal(idx){
@@ -1240,6 +1356,32 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   // this, a manual refresh (changing the date, switching back to the tab)
   // could easily overlap with an in-progress poll and double up requests.
   var refreshInFlight = null;
+  // Remembers the last successfully-fetched week locally so the very next
+  // page load (most page loads — lab members opening the same link over and
+  // over) can paint real data immediately instead of sitting on "Loading…"
+  // for however long the first Apps Script round trip takes. A background
+  // fetch still runs right after and replaces it with the true current
+  // state within a couple of seconds either way.
+  var WEEK_CACHE_KEY = 'instrumentBooking:weekCache:v1';
+  var WEEK_CACHE_MAX_AGE_MS = 12*60*60*1000; // beyond this, showing it briefly isn't worth the risk of it being misleadingly stale
+  function saveWeekCache(){
+    try {
+      localStorage.setItem(WEEK_CACHE_KEY, JSON.stringify({
+        weekStart: state.weekStart, weekEnd: state.weekEnd, bookings: state.weekBookings, savedAt: Date.now()
+      }));
+    } catch(e){}
+  }
+  function loadWeekCache(){
+    try {
+      var raw = localStorage.getItem(WEEK_CACHE_KEY);
+      if (!raw) return null;
+      var data = JSON.parse(raw);
+      if (!data || !data.weekStart || !data.weekEnd || !Array.isArray(data.bookings)) return null;
+      if (Date.now() - (data.savedAt||0) > WEEK_CACHE_MAX_AGE_MS) return null;
+      return data;
+    } catch(e){ return null; }
+  }
+
   function refreshData(){
     if (refreshInFlight) return refreshInFlight;
     var range = weekRangeFor(state.date);
@@ -1252,6 +1394,7 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
       setStatus('live', 'Live — synced with the lab');
       renderBookings();
       renderWeekTable();
+      saveWeekCache();
     }).catch(function(){
       state.dbReady = false;
       setStatus('down', 'Sync error — retrying…');
@@ -1352,8 +1495,20 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   buildLegend();
   buildGrid();
   try { qbName.value = localStorage.getItem('instrumentBooking:name') || ''; } catch(e){}
-  setStatus('', 'Connecting…');
-  setDate(todayISO());
+  var today = todayISO();
+  var cachedWeek = loadWeekCache();
+  if (cachedWeek && today >= cachedWeek.weekStart && today <= cachedWeek.weekEnd){
+    // Seed state from last time before the first setDate() call below, so
+    // it finds a cached week already in place and paints immediately
+    // instead of showing a blank "Loading…" grid on the very first visit.
+    state.weekStart = cachedWeek.weekStart;
+    state.weekEnd = cachedWeek.weekEnd;
+    state.weekBookings = cachedWeek.bookings;
+    setStatus('', 'Showing recent data — updating…');
+  } else {
+    setStatus('', 'Connecting…');
+  }
+  setDate(today);
   setInterval(highlightCurrentSlot, 60000);
   startPolling();
 })();
