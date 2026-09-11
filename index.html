@@ -45,10 +45,9 @@
   --shadow: 0 12px 28px rgba(0,0,0,.4);
 }
 *{box-sizing:border-box;}
-body{background:var(--bg);}
+body{background:var(--bg); font-family:"IBM Plex Sans", system-ui, sans-serif; color:var(--text);}
 .page{
   max-width:1500px; margin:0 auto; padding:28px 20px 48px;
-  font-family:"IBM Plex Sans", system-ui, sans-serif; color:var(--text);
 }
 h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; letter-spacing:-0.01em; margin:0; text-wrap:balance;}
 .subtitle{margin:2px 0 0; font-size:13.5px; color:var(--text-muted);}
@@ -188,6 +187,14 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
 .booking:focus-visible{outline:2px solid var(--text); outline-offset:1px;}
 .booking .name{font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.2;}
 .booking .time{font-size:10px; font-weight:500; opacity:.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.15; font-family:"IBM Plex Mono", monospace; font-variant-numeric:tabular-nums;}
+.booking .check{
+  position:absolute; top:3px; right:3px; width:15px; height:15px; border-radius:4px;
+  border:1.5px solid currentColor; background:var(--surface); opacity:0; transition:opacity .1s;
+}
+.select-mode .booking .check{opacity:.5;}
+.booking.selected{box-shadow:inset 0 0 0 2px var(--danger);}
+.booking.selected .check{opacity:1; background:var(--danger); border-color:var(--danger); color:#fff;}
+.booking.selected .check::after{content:"✓"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1;}
 .cat-cz384{background:var(--cz384);}
 .cat-br384{background:var(--br384);}
 .cat-br96{background:var(--br96);}
@@ -258,8 +265,23 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
 :root[data-theme="dark"] .toast, :root:not([data-theme="light"]) .toast{color:var(--text); background:var(--surface-2); border:1px solid var(--border-strong);}
 .toast.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
 
+.scheduler-footer{display:flex; align-items:flex-start; justify-content:space-between; gap:12px 16px; flex-wrap:wrap; margin-top:8px;}
+.scheduler-footer .hint{margin:0; flex:1; min-width:220px;}
+.scheduler-footer .btn{flex-shrink:0;}
+.btn-toggle-on{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong);}
+
+.bulk-bar{
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(12px); z-index:61;
+  display:flex; align-items:center; gap:14px; background:var(--surface); border:1px solid var(--border-strong);
+  border-radius:12px; box-shadow:var(--shadow); padding:10px 12px 10px 16px; opacity:0; pointer-events:none;
+  transition:opacity .15s, transform .15s; max-width:92vw; flex-wrap:wrap;
+}
+.bulk-bar.show{opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto;}
+.bulk-bar .bulk-count{font-size:13px; font-weight:600; white-space:nowrap;}
+.bulk-bar .bulk-actions{display:flex; gap:8px; flex-wrap:wrap;}
+
 @media (prefers-reduced-motion: reduce){
-  .drawer, .drawer-overlay, .toast{transition:none;}
+  .drawer, .drawer-overlay, .toast, .bulk-bar{transition:none;}
 }
 @media (max-width:640px){
   .topbar-controls{flex-direction:column; align-items:stretch;}
@@ -341,7 +363,10 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
           <div class="scheduler" id="scheduler"></div>
         </div>
       </div>
-      <p class="hint">Click open cells in the grid to add them to Quick Book, or use the chips on the left. Click an existing booking to view or cancel it.</p>
+      <div class="scheduler-footer">
+        <p class="hint" id="schedulerHint">Click open cells in the grid to add them to Quick Book, or use the chips on the left. Click an existing booking to view or cancel it.</p>
+        <button type="button" class="btn btn-outline" id="selectModeBtn">Select multiple to cancel</button>
+      </div>
     </div>
   </div>
 
@@ -379,6 +404,15 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
 </aside>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="bulk-bar" id="bulkBar" role="region" aria-label="Cancel selected bookings">
+  <span class="bulk-count" id="bulkCount">0 selected</span>
+  <div class="bulk-actions">
+    <button type="button" class="btn" id="bulkClear">Clear</button>
+    <button type="button" class="btn btn-danger" id="bulkCancel" disabled>Cancel selected</button>
+    <button type="button" class="btn btn-ghost" id="bulkExit" aria-label="Exit select mode">Done</button>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -428,12 +462,14 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     dbReady: false,
     activeBooking: null,
     selectedSlots: new Set(),
-    selectedResources: new Set()
+    selectedResources: new Set(),
+    selectMode: false,
+    selectedBookingIds: new Set()
   };
 
   // ---- Backend (Google Apps Script Web App over a Google Sheet) ----
   var API_URL = 'https://script.google.com/macros/s/AKfycbybHgN2gUPvM8zsSgFiTTMmennLy5McPffEIjkgN3U3HBgwFXkEpPGml-_qOSBuQin5/exec';
-  var POLL_MS = 6000;
+  var POLL_MS = 2000;
 
   function normalizeBooking(b){
     return {
@@ -594,25 +630,129 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   function renderBookings(){
     var old = scheduler.querySelectorAll('.booking');
     for (var i=0;i<old.length;i++) old[i].remove();
+
+    var liveIds = {};
     state.bookings.forEach(function(b){
+      liveIds[b.id] = true;
       var r = RES_BY_ID[b.resourceId];
       if (!r) return;
       var el = document.createElement('button');
-      el.className = 'booking ' + r.cat;
+      el.className = 'booking ' + r.cat + (state.selectedBookingIds.has(b.id) ? ' selected' : '');
       el.style.gridRow = 3+b.slotIndex;
       el.style.gridColumn = r.col;
       el.title = r.code+' — '+slotLabel(b.slotIndex)+' — booked by '+b.bookerName;
-      el.innerHTML = '<span class="name"></span><span class="time"></span>';
+      el.innerHTML = '<span class="check" aria-hidden="true"></span><span class="name"></span><span class="time"></span>';
       el.querySelector('.name').textContent = b.bookerName;
       el.querySelector('.time').textContent = slotLabel(b.slotIndex);
-      el.addEventListener('click', function(bk){ return function(){ openViewDrawer(bk); }; }(b));
+      el.addEventListener('click', function(bk){ return function(){ onBookingClick(bk); }; }(b));
       scheduler.appendChild(el);
     });
+
+    // Drop any selected ids that no longer exist (cancelled elsewhere, or belong to a different day).
+    var dropped = false;
+    state.selectedBookingIds.forEach(function(id){
+      if (!liveIds[id]){ state.selectedBookingIds.delete(id); dropped = true; }
+    });
+    if (dropped) updateBulkBar();
+
     validateSelectionsAgainstLive();
     renderAll();
   }
 
+  function onBookingClick(booking){
+    if (state.selectMode){ toggleBookingSelection(booking.id); return; }
+    openViewDrawer(booking);
+  }
+
+  // ---- Bulk select & cancel ----
+  var selectModeBtn = document.getElementById('selectModeBtn');
+  var schedulerHint = document.getElementById('schedulerHint');
+  var bulkBar = document.getElementById('bulkBar');
+  var bulkCount = document.getElementById('bulkCount');
+  var bulkClear = document.getElementById('bulkClear');
+  var bulkCancel = document.getElementById('bulkCancel');
+  var bulkExit = document.getElementById('bulkExit');
+  var bulkArmed = false;
+  var DEFAULT_HINT = 'Click open cells in the grid to add them to Quick Book, or use the chips on the left. Click an existing booking to view or cancel it.';
+  var SELECT_HINT = 'Click bookings in the grid to select them, then cancel them all at once below.';
+
+  function toggleBookingSelection(id){
+    if (state.selectedBookingIds.has(id)) state.selectedBookingIds.delete(id);
+    else state.selectedBookingIds.add(id);
+    bulkArmed = false;
+    renderBookings();
+    updateBulkBar();
+  }
+
+  function updateBulkBar(){
+    var n = state.selectedBookingIds.size;
+    bulkCount.textContent = n + ' selected';
+    bulkCancel.disabled = n === 0;
+    bulkCancel.textContent = bulkArmed ? 'Click again to confirm' : 'Cancel selected';
+    bulkBar.classList.toggle('show', state.selectMode);
+  }
+
+  function enterSelectMode(){
+    state.selectMode = true;
+    state.selectedBookingIds.clear();
+    bulkArmed = false;
+    document.body.classList.add('select-mode');
+    selectModeBtn.textContent = 'Exit select mode';
+    selectModeBtn.classList.add('btn-toggle-on');
+    schedulerHint.textContent = SELECT_HINT;
+    renderBookings();
+    updateBulkBar();
+  }
+
+  function exitSelectMode(){
+    state.selectMode = false;
+    state.selectedBookingIds.clear();
+    bulkArmed = false;
+    document.body.classList.remove('select-mode');
+    selectModeBtn.textContent = 'Select multiple to cancel';
+    selectModeBtn.classList.remove('btn-toggle-on');
+    schedulerHint.textContent = DEFAULT_HINT;
+    renderBookings();
+    updateBulkBar();
+  }
+
+  selectModeBtn.addEventListener('click', function(){
+    if (state.selectMode) exitSelectMode(); else enterSelectMode();
+  });
+  bulkClear.addEventListener('click', function(){
+    state.selectedBookingIds.clear();
+    bulkArmed = false;
+    renderBookings();
+    updateBulkBar();
+  });
+  bulkExit.addEventListener('click', exitSelectMode);
+  bulkCancel.addEventListener('click', async function(){
+    if (state.selectedBookingIds.size === 0) return;
+    if (!bulkArmed){
+      bulkArmed = true;
+      updateBulkBar();
+      setTimeout(function(){ if (bulkArmed){ bulkArmed=false; updateBulkBar(); } }, 4000);
+      return;
+    }
+    var ids = Array.from(state.selectedBookingIds);
+    bulkCancel.disabled = true;
+    bulkCancel.textContent = 'Cancelling…';
+    var outcomes = await Promise.allSettled(ids.map(function(id){ return apiDelete(id); }));
+    var ok = 0, failed = 0;
+    outcomes.forEach(function(o){
+      if (o.status==='fulfilled' && o.value && o.value.ok) ok++;
+      else failed++;
+    });
+    var msg = ok>0 ? ('Cancelled '+ok+' booking'+(ok>1?'s':'')+'.') : 'Nothing cancelled.';
+    if (failed>0) msg += ' ('+failed+' failed — try again.)';
+    showToast(msg);
+    bulkArmed = false;
+    exitSelectMode();
+    await refreshData();
+  });
+
   function onSlotCellClick(e){
+    if (state.selectMode) return;
     var resourceId = e.currentTarget.getAttribute('data-resource');
     var slotIdx = parseInt(e.currentTarget.getAttribute('data-slot'), 10);
     if (bookingFor(resourceId, slotIdx)) return;
