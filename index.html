@@ -149,7 +149,10 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   grid-template-columns:62px repeat(12, minmax(70px, 1fr));
   grid-template-rows:32px 46px repeat(14, 46px);
   min-width:902px;
+  transition:opacity .1s;
 }
+.scheduler.loading{opacity:.55;}
+@media (prefers-reduced-motion: reduce){ .scheduler{transition:none;} }
 .cell-corner{grid-column:1; grid-row:1 / 3; position:sticky; top:0; left:0; z-index:6; background:var(--surface); border-right:1px solid var(--border); border-bottom:1px solid var(--border);}
 .cell-cat{
   grid-row:1; position:sticky; top:0; z-index:5; display:flex; align-items:center; padding:0 10px;
@@ -1048,7 +1051,24 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     state.selectedSlots.clear();
     state.selectedResources.clear();
     highlightCurrentSlot();
-    renderAll();
+
+    // A week-range fetch already returns every date in that week, so if the
+    // new date falls inside the week we already have cached, show it
+    // instantly from that cache — no need to wait on a new round trip just
+    // to flip between days. A background refresh still runs right after, in
+    // case something changed since that data was fetched.
+    var haveCachedWeek = !!state.weekStart && iso >= state.weekStart && iso <= state.weekEnd;
+    if (haveCachedWeek){
+      state.bookings = state.weekBookings.filter(function(b){ return b.dateISO === iso; });
+    } else {
+      // Crossing into a week we haven't fetched yet — nothing to show until
+      // the fetch comes back, so clear stale bookings rather than leave the
+      // previous date's data sitting in the grid under the new date.
+      state.bookings = [];
+      scheduler.classList.add('loading');
+      setStatus('', 'Loading ' + formatDateShort(iso) + '…');
+    }
+    renderBookings();
     triggerRefreshNow();
   }
   document.getElementById('prevDay').addEventListener('click', function(){ var d=fromISO(state.date); d.setDate(d.getDate()-1); setDate(toISO(d)); });
@@ -1080,6 +1100,7 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
       state.dbReady = false;
       setStatus('down', 'Sync error — retrying…');
     }).then(function(){
+      scheduler.classList.remove('loading');
       refreshInFlight = null;
     });
     return refreshInFlight;
