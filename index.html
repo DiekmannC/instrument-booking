@@ -198,6 +198,13 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
 .booking.selected{box-shadow:inset 0 0 0 2px var(--danger);}
 .booking.selected .check{opacity:1; background:var(--danger); border-color:var(--danger); color:#fff;}
 .booking.selected .check::after{content:"✓"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1;}
+.booking.pending{
+  cursor:default; border-style:dashed; opacity:.7; background:var(--surface-2); color:var(--text-muted);
+  animation:pending-pulse 1.1s ease-in-out infinite;
+}
+.booking.pending .name{font-weight:600; font-style:italic;}
+@keyframes pending-pulse{ 0%,100%{opacity:.55;} 50%{opacity:.85;} }
+@media (prefers-reduced-motion: reduce){ .booking.pending{animation:none;} }
 .cat-cz384{background:var(--cz384);}
 .cat-br384{background:var(--br384);}
 .cat-br96{background:var(--br96);}
@@ -467,7 +474,8 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     selectedSlots: new Set(),
     selectedResources: new Set(),
     selectMode: false,
-    selectedBookingIds: new Set()
+    selectedBookingIds: new Set(),
+    pendingKeys: new Set()
   };
 
   // ---- Backend (Google Apps Script Web App over a Google Sheet) ----
@@ -526,6 +534,27 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'delete', id: id })
+    });
+  }
+
+  // Books any number of slots in ONE request instead of one call per slot.
+  // Firing many booking requests at once used to queue them all behind the
+  // backend's write lock — enough of them and some would time out and fail
+  // outright, while the rest still took many seconds combined. A single
+  // batched request stays fast and reliable no matter how many slots.
+  function apiBatchAdd(items){
+    return fetchJSON(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'batchAdd', items: items })
+    });
+  }
+
+  function apiBatchDelete(ids){
+    return fetchJSON(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'batchDelete', ids: ids })
     });
   }
 
@@ -670,6 +699,26 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     });
     if (dropped) updateBulkBar();
 
+    // Optimistic placeholders: a slot that's mid-submit (waiting on the batch
+    // request to come back) shows immediately as "Booking…" instead of the
+    // grid just sitting empty for the couple of seconds a real request takes.
+    // Skipped once the real booking has landed (bookingFor already finds it).
+    state.pendingKeys.forEach(function(key){
+      var parts = key.split('|');
+      var rid = parts[0], idx = Number(parts[1]);
+      if (bookingFor(rid, idx)) return;
+      var r = RES_BY_ID[rid];
+      if (!r) return;
+      var el = document.createElement('div');
+      el.className = 'booking pending ' + r.cat;
+      el.style.gridRow = 3+idx;
+      el.style.gridColumn = r.col;
+      el.title = r.code+' — '+slotLabel(idx)+' — booking…';
+      el.innerHTML = '<span class="name">Booking…</span><span class="time"></span>';
+      el.querySelector('.time').textContent = slotLabel(idx);
+      scheduler.appendChild(el);
+    });
+
     validateSelectionsAgainstLive();
     renderAll();
   }
@@ -752,12 +801,18 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     var ids = Array.from(state.selectedBookingIds);
     bulkCancel.disabled = true;
     bulkCancel.textContent = 'Cancelling…';
-    var outcomes = await Promise.allSettled(ids.map(function(id){ return apiDelete(id); }));
     var ok = 0, failed = 0;
-    outcomes.forEach(function(o){
-      if (o.status==='fulfilled' && o.value && o.value.ok) ok++;
-      else failed++;
-    });
+    try {
+      var resp = await apiBatchDelete(ids);
+      if (resp && resp.ok){
+        ok = resp.deleted;
+        failed = ids.length - resp.deleted;
+      } else {
+        failed = ids.length;
+      }
+    } catch(e){
+      failed = ids.length;
+    }
     var msg = ok>0 ? ('Cancelled '+ok+' booking'+(ok>1?'s':'')+'.') : 'Nothing cancelled.';
     if (failed>0) msg += ' ('+failed+' failed — try again.)';
     showToast(msg);
@@ -932,23 +987,41 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     qbSubmit.disabled = true;
     qbSubmit.textContent = 'Booking…';
 
-    var outcomes = await Promise.allSettled(jobs.map(function(j){
-      return apiAdd({
+    // Show every requested slot as "Booking…" right away. The real request
+    // (one call for the whole batch, see apiBatchAdd) still takes a moment,
+    // but the grid responds instantly instead of sitting still until the
+    // network call comes back.
+    jobs.forEach(function(j){ state.pendingKeys.add(j.rid+'|'+j.idx); });
+    renderBookings();
+
+    var items = jobs.map(function(j){
+      return {
         resourceId: j.rid,
         dateISO: state.date,
         slotIndex: j.idx,
         startMin: SLOTS[j.idx].start,
         endMin: SLOTS[j.idx].end,
         bookerName: name
-      });
-    }));
+      };
+    });
 
     var succeeded = 0, conflicts = preConflicts, failed = 0;
-    outcomes.forEach(function(o){
-      if (o.status==='fulfilled' && o.value && o.value.ok) succeeded++;
-      else if (o.status==='fulfilled' && o.value && o.value.error==='conflict') conflicts++;
-      else failed++;
-    });
+    try {
+      var resp = await apiBatchAdd(items);
+      if (resp && resp.ok && resp.results){
+        resp.results.forEach(function(r){
+          if (r.ok) succeeded++;
+          else if (r.error === 'conflict') conflicts++;
+          else failed++;
+        });
+      } else {
+        failed += items.length;
+      }
+    } catch(e){
+      failed += items.length;
+    }
+
+    jobs.forEach(function(j){ state.pendingKeys.delete(j.rid+'|'+j.idx); });
 
     try { localStorage.setItem('instrumentBooking:name', name); } catch(e){}
 
