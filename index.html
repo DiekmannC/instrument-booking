@@ -518,7 +518,12 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     };
   }
 
-  var FETCH_TIMEOUT_MS = 15000;
+  // Apps Script cold starts have been observed taking up to ~18s in testing,
+  // so a 15s abort could cut off a request that was about to succeed —
+  // giving up right as the backend was finally getting there, only to
+  // immediately retry and risk the same thing again. 20s gives real cold
+  // starts room to actually finish.
+  var FETCH_TIMEOUT_MS = 20000;
 
   function fetchJSON(url, opts){
     // Google Apps Script can occasionally take a long time to respond. Without
@@ -1391,13 +1396,16 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
       state.weekBookings = bookings;
       state.bookings = bookings.filter(function(b){ return b.dateISO === state.date; });
       state.dbReady = true;
+      consecutiveFailures = 0;
       setStatus('live', 'Live — synced with the lab');
       renderBookings();
       renderWeekTable();
       saveWeekCache();
     }).catch(function(){
       state.dbReady = false;
-      setStatus('down', 'Sync error — retrying…');
+      consecutiveFailures++;
+      var retryInSec = Math.round(nextPollDelay()/1000);
+      setStatus('down', 'Sync error — retrying in '+retryInSec+'s…');
     }).then(function(){
       scheduler.classList.remove('loading');
       refreshInFlight = null;
@@ -1408,11 +1416,22 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   // Self-rescheduling loop, not a fixed setInterval: this always waits for
   // the in-flight request (from any trigger — the poll tick, a date change,
   // or the tab regaining focus) to settle before counting down again, so
-  // slow responses can never cause requests to pile up.
+  // slow responses can never cause requests to pile up. On top of that,
+  // repeated failures back off (doubling up to a cap) instead of retrying
+  // at the same steady cadence — during a genuinely slow/cold patch on the
+  // backend, hammering it every couple of seconds just adds more competing
+  // requests on top of whatever's already making it slow. A single success
+  // resets straight back to the normal 2s cadence.
+  var consecutiveFailures = 0;
+  var MAX_POLL_BACKOFF_MS = 30000;
+  function nextPollDelay(){
+    if (consecutiveFailures <= 1) return POLL_MS; // one blip isn't worth slowing down for
+    return Math.min(POLL_MS * Math.pow(2, consecutiveFailures-1), MAX_POLL_BACKOFF_MS);
+  }
   var pollTimer = null;
   function scheduleNextPoll(){
     if (pollTimer) clearTimeout(pollTimer);
-    pollTimer = setTimeout(pollTick, POLL_MS);
+    pollTimer = setTimeout(pollTick, nextPollDelay());
   }
   function triggerRefreshNow(){
     if (pollTimer) clearTimeout(pollTimer);
