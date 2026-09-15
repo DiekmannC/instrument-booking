@@ -63,6 +63,20 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
 .status-pill.live .dot{background:var(--accent);}
 .status-pill.down{color:var(--danger); border-color:var(--danger); background:var(--danger-soft);}
 .status-pill.down .dot{background:var(--danger);}
+.status-pill{cursor:pointer;}
+.sync-group{display:inline-flex; align-items:center; gap:6px;}
+.btn-refresh{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:28px; height:28px; padding:0; border-radius:8px;
+  border:1px solid var(--border); background:var(--surface); color:var(--text-muted);
+  cursor:pointer; transition:color .12s, border-color .12s, background .12s;
+}
+.btn-refresh svg{width:15px; height:15px; display:block;}
+.btn-refresh:hover{color:var(--accent-strong); border-color:var(--accent); background:var(--accent-soft);}
+.btn-refresh:disabled{cursor:default; opacity:.7;}
+.btn-refresh.spinning svg{animation:refresh-spin .9s linear infinite;}
+@keyframes refresh-spin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion: reduce){ .btn-refresh.spinning svg{animation:none;} }
 .topbar-controls{display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;}
 .date-nav{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
 .btn{
@@ -314,7 +328,12 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
         <h1>Instrument Booking</h1>
         <p class="subtitle">CZ &amp; BR lab thermocyclers &middot; Firefly &middot; Mantis &mdash; shared with the whole lab</p>
       </div>
-      <div class="status-pill" id="statusPill" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Connecting…</span></div>
+      <div class="sync-group">
+        <div class="status-pill" id="statusPill" role="status" aria-live="polite" title="Click to check for updates now"><span class="dot"></span><span id="statusText">Connecting…</span></div>
+        <button type="button" class="btn-refresh" id="refreshBtn" aria-label="Check for updates now" title="Check for updates now">
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M13.6 1.9v3.2h-3.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
     </div>
     <div class="topbar-controls">
       <div class="date-nav">
@@ -992,18 +1011,27 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   }
 
   document.addEventListener('pointermove', function(e){
+    if (!dragSel && !dragCandidate) return;
+    // A drag normally ends on pointerup, but that event never arrives if the
+    // button is released somewhere the page can't see it — outside the
+    // window, over another app, past the edge of the browser. Without this
+    // check the drag stayed "live" afterwards and ordinary mouse movement
+    // kept painting cells and re-rendering the grid on every frame, which
+    // looks exactly like the page has frozen. e.buttons is 0 whenever no
+    // button is actually held, so it catches every one of those cases.
+    if (e.buttons === 0){ endDrag(); return; }
     if (dragSel){
       handlePointerMoveTarget(e.clientX, e.clientY);
       scheduleDragRender();
       return;
     }
-    if (dragCandidate){
-      var dx = e.clientX-dragCandidate.startX, dy = e.clientY-dragCandidate.startY;
-      if (Math.sqrt(dx*dx+dy*dy) >= DRAG_THRESHOLD_PX) promoteToDrag(e.clientX, e.clientY);
-    }
+    var dx = e.clientX-dragCandidate.startX, dy = e.clientY-dragCandidate.startY;
+    if (Math.sqrt(dx*dx+dy*dy) >= DRAG_THRESHOLD_PX) promoteToDrag(e.clientX, e.clientY);
   });
   document.addEventListener('pointerup', endDrag);
   document.addEventListener('pointercancel', endDrag);
+  // Switching apps or tabs mid-drag is the other way a pointerup goes missing.
+  window.addEventListener('blur', endDrag);
 
   // ---- Selection logic ----
   function addSlotInternal(idx){
@@ -1435,8 +1463,31 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   }
   function triggerRefreshNow(){
     if (pollTimer) clearTimeout(pollTimer);
-    refreshData().then(scheduleNextPoll, scheduleNextPoll);
+    return refreshData().then(scheduleNextPoll, scheduleNextPoll);
   }
+
+  // Manual refresh. The retry backoff can stretch to 30s between attempts
+  // during a bad patch on the backend, which leaves you watching a countdown
+  // with no way to say "just try now" — this is that way. It also clears the
+  // failure count, so one click puts the cadence straight back to normal
+  // instead of continuing to creep upward.
+  var refreshBtn = document.getElementById('refreshBtn');
+  var refreshBusy = false;
+  function manualRefresh(){
+    if (refreshBusy) return;
+    refreshBusy = true;
+    consecutiveFailures = 0;
+    refreshBtn.classList.add('spinning');
+    refreshBtn.disabled = true;
+    setStatus('', 'Checking…');
+    triggerRefreshNow().then(function(){
+      refreshBusy = false;
+      refreshBtn.classList.remove('spinning');
+      refreshBtn.disabled = false;
+    });
+  }
+  refreshBtn.addEventListener('click', manualRefresh);
+  statusPill.addEventListener('click', manualRefresh);
   function pollTick(){
     if (document.visibilityState !== 'visible'){ scheduleNextPoll(); return; }
     triggerRefreshNow();
