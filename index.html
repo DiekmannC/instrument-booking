@@ -12,6 +12,7 @@
   --text:#1A2127; --text-muted:#5C6770; --text-faint:#8B959D;
   --accent:#0F7A72; --accent-strong:#0B5C56; --accent-soft:#E1F1EF;
   --danger:#B3432F; --danger-soft:#F7E4DF;
+  --warn:#8A6410; --warn-soft:#FAF0D9;
   --cz384:#C57A2E; --cz384-soft:#F7ECDC;
   --br384:#3866C9; --br384-soft:#E3EBFB;
   --br96:#7D56B8; --br96-soft:#EEE7F8;
@@ -25,6 +26,7 @@
     --text:#E7EDF0; --text-muted:#A7B3BA; --text-faint:#6E7B83;
     --accent:#3DBAAD; --accent-strong:#59CCBF; --accent-soft:#163330;
     --danger:#E2795F; --danger-soft:#33201A;
+    --warn:#D9A945; --warn-soft:#2E2614;
     --cz384:#E3A24F; --cz384-soft:#332512;
     --br384:#7C9EEB; --br384-soft:#1B2740;
     --br96:#B393E0; --br96-soft:#271D38;
@@ -38,6 +40,7 @@
   --text:#E7EDF0; --text-muted:#A7B3BA; --text-faint:#6E7B83;
   --accent:#3DBAAD; --accent-strong:#59CCBF; --accent-soft:#163330;
   --danger:#E2795F; --danger-soft:#33201A;
+  --warn:#D9A945; --warn-soft:#2E2614;
   --cz384:#E3A24F; --cz384-soft:#332512;
   --br384:#7C9EEB; --br384-soft:#1B2740;
   --br96:#B393E0; --br96-soft:#271D38;
@@ -61,6 +64,8 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
 .status-pill .dot{width:7px; height:7px; border-radius:50%; background:var(--text-faint);}
 .status-pill.live{color:var(--accent-strong); border-color:var(--accent); background:var(--accent-soft);}
 .status-pill.live .dot{background:var(--accent);}
+.status-pill.stale{color:var(--warn); border-color:var(--warn); background:var(--warn-soft);}
+.status-pill.stale .dot{background:var(--warn);}
 .status-pill.down{color:var(--danger); border-color:var(--danger); background:var(--danger-soft);}
 .status-pill.down .dot{background:var(--danger);}
 .status-pill{cursor:pointer;}
@@ -1286,7 +1291,10 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
     cancelBtn.className = 'btn btn-danger';
     cancelBtn.textContent = cancelArmed ? 'Click again to confirm' : 'Cancel booking';
     cancelBtn.addEventListener('click', function(){
-      if (!state.dbReady){ showToast('Sync unavailable right now.'); return; }
+      // Deliberately not gated on sync state. A single missed background poll
+      // used to block cancelling here, even though the booking in front of
+      // you is real and the request would have gone through fine. If the
+      // cancel itself fails, performCancel says so and puts the booking back.
       if (cancelArmed){ performCancel(); }
       else { cancelArmed = true; renderCancelFoot(); setTimeout(function(){ if (cancelArmed){ cancelArmed=false; renderCancelFoot(); } }, 4000); }
     });
@@ -1425,15 +1433,15 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
       state.bookings = bookings.filter(function(b){ return b.dateISO === state.date; });
       state.dbReady = true;
       consecutiveFailures = 0;
-      setStatus('live', 'Live — synced with the lab');
+      lastSyncAt = Date.now();
+      renderSyncStatus();
       renderBookings();
       renderWeekTable();
       saveWeekCache();
     }).catch(function(){
       state.dbReady = false;
       consecutiveFailures++;
-      var retryInSec = Math.round(nextPollDelay()/1000);
-      setStatus('down', 'Sync error — retrying in '+retryInSec+'s…');
+      renderSyncStatus();
     }).then(function(){
       scheduler.classList.remove('loading');
       refreshInFlight = null;
@@ -1452,6 +1460,51 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   // resets straight back to the normal 2s cadence.
   var consecutiveFailures = 0;
   var MAX_POLL_BACKOFF_MS = 30000;
+
+  // A poll failing here and there is normal, and when it happens the grid is
+  // still showing data that's only seconds old — nothing is actually wrong
+  // from where you're sitting. So the first couple of misses stay quiet and
+  // just read as "Syncing…" instead of flashing a red error. Only once we
+  // genuinely haven't heard back for a while does it escalate, and even then
+  // it says how old the data on screen is, which is the thing worth knowing
+  // before you book a slot. The retry timing moves to the tooltip so the
+  // pill itself stays readable at a glance.
+  var lastSyncAt = null;
+  var QUIET_FAILURES = 2;         // only used before anything has ever loaded
+  var STALE_WARN_MS = 30*1000;    // old enough to mention
+  var STALE_RED_MS = 2*60*1000;   // old enough to flag hard
+
+  function agoLabel(ms){
+    var sec = Math.round(ms/1000);
+    if (sec < 60) return sec + 's ago';
+    var min = Math.round(sec/60);
+    if (min < 60) return min + ' min ago';
+    var hr = Math.round(min/60);
+    return hr + (hr === 1 ? ' hour ago' : ' hours ago');
+  }
+
+  function renderSyncStatus(){
+    if (consecutiveFailures === 0){
+      statusPill.title = 'Click to check for updates now';
+      setStatus('live', 'Live — synced with the lab');
+      return;
+    }
+    statusPill.title = 'Last check didn\'t get through. Retrying in '
+      + Math.round(nextPollDelay()/1000) + 's — click to try now.';
+    if (!lastSyncAt){
+      // Nothing has ever loaded, so there's no "how stale" to report.
+      setStatus(consecutiveFailures <= QUIET_FAILURES ? '' : 'stale',
+                consecutiveFailures <= QUIET_FAILURES ? 'Syncing…' : 'Still trying to connect…');
+      return;
+    }
+    // Drive the alarm off how old the data actually is, not off how many
+    // requests have missed. Those come apart as soon as you hit refresh,
+    // which resets the retry cadence but doesn't make the grid any fresher.
+    var age = Date.now() - lastSyncAt;
+    if (age >= STALE_RED_MS){ setStatus('down', 'Last synced ' + agoLabel(age)); return; }
+    if (age >= STALE_WARN_MS){ setStatus('stale', 'Last synced ' + agoLabel(age)); return; }
+    setStatus('', 'Syncing…');
+  }
   function nextPollDelay(){
     if (consecutiveFailures <= 1) return POLL_MS; // one blip isn't worth slowing down for
     return Math.min(POLL_MS * Math.pow(2, consecutiveFailures-1), MAX_POLL_BACKOFF_MS);
@@ -1580,6 +1633,12 @@ h1{font-family:"Archivo",system-ui,sans-serif; font-weight:800; font-size:26px; 
   }
   setDate(today);
   setInterval(highlightCurrentSlot, 60000);
+  // Keep the "last synced" label truthful between attempts — with backoff,
+  // polls can be up to 30s apart, and a label that says "1 min ago" for
+  // three minutes is its own kind of misleading.
+  setInterval(function(){
+    if (consecutiveFailures > 0) renderSyncStatus();
+  }, 15000);
   startPolling();
 })();
 </script>
